@@ -1,0 +1,444 @@
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Noto Sans TC", sans-serif;
+  background: #ffffff;
+  color: #171717;
+  -webkit-tap-highlight-color: transparent;
+}
+
+body[data-theme="light"] {
+  --page-bg: #ffffff;
+  --panel-bg: #f5f5f5;
+  --ink: #171717;
+  --muted-surface: #e5e5e5;
+  --accent: #171717;
+  --accent-ink: #ffffff;
+}
+
+body[data-theme="warm"] {
+  --page-bg: #fff7ed;
+  --panel-bg: #ffedd5;
+  --ink: #171717;
+  --muted-surface: #fed7aa;
+  --accent: #9a3412;
+  --accent-ink: #ffffff;
+}
+
+body[data-theme="cool"] {
+  --page-bg: #f0f9ff;
+  --panel-bg: #e0f2fe;
+  --ink: #171717;
+  --muted-surface: #bae6fd;
+  --accent: #075985;
+  --accent-ink: #ffffff;
+}
+
+body[data-theme="dark"] {
+  --page-bg: #171717;
+  --panel-bg: #262626;
+  --ink: #ffffff;
+  --muted-surface: #404040;
+  --accent: #ffffff;
+  --accent-ink: #171717;
+}
+
+body[data-theme="rose"] {
+  --page-bg: #fff1f2;
+  --panel-bg: #ffe4e6;
+  --ink: #171717;
+  --muted-surface: #fecdd3;
+  --accent: #9f1239;
+  --accent-ink: #ffffff;
+}
+
+body {
+  background: var(--page-bg, #ffffff);
+  color: var(--ink, #171717);
+}
+
+.home-link {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: var(--accent, #171717);
+  color: var(--accent-ink, #ffffff);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.home-link--float {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
+}
+
+.board-progress {
+  position: fixed;
+  top: 1rem;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 100;
+  min-width: 4.5rem;
+  min-height: 2.25rem;
+  padding: 0 0.85rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--accent, #171717);
+  color: var(--accent-ink, #ffffff);
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.board-progress.is-done {
+  background: #737373;
+  color: #ffffff;
+}
+
+body:has(.back-btn:not([hidden])) .home-link--float,
+body:has(.back-btn:not([hidden])) .board-progress {
+  display: none;
+}
+
+.viewport {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--page-bg, #ffffff);
+  touch-action: none;
+  cursor: grab;
+}
+
+.viewport.is-scratch {
+  cursor: default;
+}
+
+.viewport:active:not(.is-scratch) {
+  cursor: grabbing;
+}
+
+.world {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.world.is-animating {
+  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.board {
+  position: relative;
+}
+
+.board-canvas,
+.board-tiles,
+.board-slots {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.15s ease;
+}
+
+.board-canvas.is-active,
+.board-tiles.is-active,
+.board-slots.is-active {
+  opacity: 1;
+}
+
+.board-slots.is-active .slot {
+  pointer-events: auto;
+}
+
+.board-canvas {
+  display: block;
+}
+
+.board-tile {
+  position: absolute;
+  display: block;
+  pointer-events: none;
+}
+
+.board-slots {
+  z-index: 1;
+}
+
+.board.is-detail .slot:not(.is-active) {
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.slot {
+  position: absolute;
+  border-radius: 50%;
+  border: none;
+  padding: 0;
+  background: transparent;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+  transition: opacity 0.35s ease;
+  overflow: visible;
+}
+
+.slot:disabled {
+  cursor: default;
+}
+
+.slot__preview {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  overflow: hidden;
+}
+
+.slot__preview-canvas {
+  width: 100%;
+  height: 100%;
+  display: block;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.slot__number {
+  position: absolute;
+  inset: 0;
+  display: none;
+  border-radius: 50%;
+  background: var(--muted-surface, #e5e5e5);
+  color: var(--ink, #171717);
+  font-size: 1.35rem;
+  font-weight: 800;
+  z-index: 1;
+}
+
+.slot__scratch {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  pointer-events: none;
+  z-index: 2;
+  overflow: visible;
+}
+
+.slot.is-active .slot__scratch,
+.slot.is-visited .slot__scratch {
+  opacity: 1;
+}
+
+.slot.is-active .slot__scratch {
+  pointer-events: auto;
+}
+
+.scratch-card {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  overflow: visible;
+  user-select: none;
+}
+
+.scratch-card__reveal {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: #f3f3f3;
+  display: grid;
+  place-items: center;
+}
+
+.scratch-card__number {
+  font-size: 2.75rem;
+  font-weight: 800;
+  color: #171717;
+  line-height: 1;
+}
+
+.scratch-card__particles {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1;
+}
+
+.scratch-card__canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  cursor: default;
+  touch-action: none;
+  z-index: 2;
+  transition: opacity 0.2s ease;
+}
+
+.scratch-card__canvas.is-pressed {
+  cursor: grabbing;
+}
+
+.back-btn {
+  position: fixed;
+  top: 1rem;
+  left: 1rem;
+  z-index: 100;
+  width: 2.25rem;
+  height: 2.25rem;
+  padding: 0;
+  font-size: 1.125rem;
+  line-height: 1;
+  font-weight: 500;
+  color: var(--accent-ink, #ffffff);
+  background: var(--accent, #404040);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+}
+
+.back-btn:hover {
+  filter: brightness(0.92);
+}
+
+.back-btn[hidden] {
+  display: none;
+}
+
+.reveal-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  background: rgba(23, 23, 23, 0.55);
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+}
+
+.reveal-modal[hidden] {
+  display: none;
+}
+
+.reveal-modal__card {
+  position: relative;
+  width: min(360px, 100%);
+  background: #ffffff;
+  color: #171717;
+  border-radius: 16px;
+  padding: 1.5rem 1.25rem 1.25rem;
+  display: grid;
+  gap: 0.65rem;
+  justify-items: center;
+  overflow: hidden;
+}
+
+.reveal-modal__card.level-2 {
+  background: #171717;
+  color: #ffffff;
+}
+
+.reveal-modal__fx {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.reveal-modal__number {
+  position: relative;
+  font-size: 2.5rem;
+  font-weight: 800;
+}
+
+.reveal-modal__image {
+  position: relative;
+  width: 120px;
+  height: 120px;
+  border-radius: 12px;
+  object-fit: cover;
+  background: #e5e5e5;
+}
+
+.reveal-modal__grade {
+  position: relative;
+  font-size: 0.85rem;
+  font-weight: 700;
+}
+
+.reveal-modal__name {
+  position: relative;
+  font-size: 1.05rem;
+  font-weight: 700;
+  text-align: center;
+}
+
+.btn-solid {
+  position: relative;
+  margin-top: 0.35rem;
+  min-width: 96px;
+  min-height: 2.25rem;
+  padding: 0.55rem 1rem;
+  border: none;
+  border-radius: 8px;
+  background: #171717;
+  color: #ffffff;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.reveal-modal__card.level-2 .btn-solid {
+  background: #ffffff;
+  color: #171717;
+}
+
+.celebrate-layer {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.celebrate-piece {
+  position: absolute;
+  top: -12px;
+  border-radius: 2px;
+  animation-name: confetti-fall;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+}
+
+.celebrate-layer.is-grand .celebrate-piece {
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+}
+
+@keyframes confetti-fall {
+  0% {
+    transform: translate3d(0, 0, 0) rotate(0deg);
+    opacity: 1;
+  }
+  100% {
+    transform: translate3d(0, 120%, 0) rotate(240deg);
+    opacity: 0;
+  }
+}

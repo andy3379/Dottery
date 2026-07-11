@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Dottery</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <a class="home-link home-link--float" href="/shop" aria-label="home">←</a>
+  <div class="board-progress" id="boardProgress"></div>
+
+  <div class="viewport" id="viewport">
+    <div class="world" id="world">
+      <div class="board" id="board">
+        <canvas class="board-canvas" id="boardCanvas"></canvas>
+        <div class="board-tiles" id="boardTiles"></div>
+        <div class="board-slots" id="boardSlots"></div>
+      </div>
+    </div>
+  </div>
+
+  <button type="button" class="back-btn" id="backBtn" hidden aria-label="back">←</button>
+
+  <div class="reveal-modal" id="revealModal" hidden>
+    <div class="reveal-modal__card" id="revealCard">
+      <div class="reveal-modal__fx" id="revealFx"></div>
+      <div class="reveal-modal__number" id="revealNumber"></div>
+      <img class="reveal-modal__image" id="revealImage" alt="" hidden />
+      <div class="reveal-modal__grade" id="revealGrade"></div>
+      <div class="reveal-modal__name" id="revealName"></div>
+      <button type="button" class="btn-solid" id="revealClose">OK</button>
+    </div>
+  </div>
+
+  <script src="/scratch-texture.js"></script>
+  <script src="/scratch-effects.js"></script>
+  <script src="/scratch-card.js"></script>
+  <script src="/product-config.js"></script>
+  <script src="/board-engine.js"></script>
+  <script src="/map-view.js"></script>
+  <script src="/board-info.js"></script>
+  <script src="/app.js"></script>
+</body>
+</html>
