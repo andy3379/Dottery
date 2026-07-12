@@ -23,14 +23,13 @@
 
   function buildDemoBoard() {
     const prizes = [
-      { id: "a", grade: "A", name: "Grand", image: "", quantity: 1, isLastOne: false },
-      { id: "b", grade: "B", name: "Mid", image: "", quantity: 2, isLastOne: false },
-      { id: "c", grade: "C", name: "Small", image: "", quantity: 3, isLastOne: false },
-      { id: "d", grade: "D", name: "Extra", image: "", quantity: 6, isLastOne: false },
+      { id: "a", name: "Grand", image: "", quantity: 1, isLastOne: false },
+      { id: "b", name: "Mid", image: "", quantity: 2, isLastOne: false },
+      { id: "c", name: "Small", image: "", quantity: 3, isLastOne: false },
+      { id: "d", name: "Extra", image: "", quantity: 6, isLastOne: false },
     ];
     const lastOne = {
       id: "last",
-      grade: "最後賞",
       name: "Finale",
       image: "",
       quantity: 1,
@@ -53,7 +52,6 @@
         scratched: false,
         prize: {
           id: prize.id,
-          grade: prize.grade,
           name: prize.name,
           image: prize.image,
           isLastOne: false,
@@ -83,11 +81,14 @@
       remainingDraws: 12,
       remaining: prizes.map((p) => ({
         id: p.id,
-        grade: p.grade,
         name: p.name,
         image: p.image,
         quantity: p.quantity,
         remaining: p.quantity,
+        numbers: slots
+          .filter((slot) => slot.prize.id === p.id)
+          .map((slot) => slot.number)
+          .sort((a, b) => a - b),
       })),
       winningNumbers: slots
         .slice()
@@ -96,7 +97,7 @@
           number: slot.number,
           scratched: false,
           prizeId: slot.prize.id,
-          grade: slot.prize.grade,
+          name: slot.prize.name,
           name: slot.prize.name,
           image: slot.prize.image,
         })),
@@ -134,12 +135,42 @@
     };
   }
 
+  function clamp(value, min, max) {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function computeOptimalCols(slotCount, aspect) {
+    if (slotCount <= 1) return 1;
+    const ratio = aspect > 0 ? aspect : 1;
+    let minCols = 2;
+    if (slotCount > 12) minCols = 4;
+    if (slotCount > 36) minCols = 8;
+    const maxCols = slotCount;
+
+    let targetCols = Math.round(Math.sqrt(slotCount * ratio));
+    targetCols = clamp(targetCols, minCols, maxCols);
+
+    for (let i = 0; i < 12; i++) {
+      const rows = Math.ceil(slotCount / targetCols);
+      const gridAspect = targetCols / Math.max(rows, 1);
+      if (gridAspect < ratio * 0.92 && targetCols < maxCols) {
+        targetCols += 1;
+      } else if (gridAspect > ratio * 1.08 && targetCols > minCols) {
+        targetCols -= 1;
+      } else {
+        break;
+      }
+    }
+
+    return targetCols;
+  }
+
   function normalizeProduct(raw) {
     const slotCount = Math.max(
       1,
       Number(raw.slotCount ?? raw.totalDraws) || 1
     );
-    const cols = Math.max(1, Number(raw.cols) || Math.ceil(Math.sqrt(slotCount)));
+    const cols = computeOptimalCols(slotCount);
     const rows = Math.ceil(slotCount / cols);
 
     return {
@@ -271,7 +302,11 @@
     const productId = params.get("product");
 
     if (!productId || productId === "demo") {
-      window.location.replace("/shop");
+      if (window.PageTransition) {
+        PageTransition.navigate("/shop", "to-shop");
+      } else {
+        window.location.replace("/shop");
+      }
       return null;
     }
 
@@ -284,6 +319,7 @@
     claimSlot,
     scratchSlot,
     normalizeProduct,
+    computeOptimalCols,
     loadDemoBoard,
     DEMO_PRODUCT: buildDemoBoard(),
   };

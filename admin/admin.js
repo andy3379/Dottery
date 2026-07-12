@@ -54,6 +54,7 @@
     settings: null,
     error: "",
     saving: false,
+    targetMarginRate: 0.3,
   };
 
   async function api(path, options = {}) {
@@ -235,11 +236,11 @@
   }
 
   function blankPrize() {
-    return { id: "", grade: "", name: "", image: "", quantity: 1, cost: 0 };
+    return { id: "", name: "", image: "", quantity: 1, cost: 0 };
   }
 
   function blankLastOne() {
-    return { id: "", grade: "最後賞", name: "", image: "", quantity: 1, cost: 0, isLastOne: true };
+    return { id: "", name: "", image: "", quantity: 1, cost: 0, isLastOne: true };
   }
 
   function syncLastOneEnabled(product) {
@@ -329,43 +330,132 @@
     return "";
   }
 
-  function computeEconomics(product) {
-    const totalDraws = Math.max(1, Number(product.totalDraws) || 1);
-    const price = Number(product.price) || 0;
-    const regular = (product.prizes || []).filter((p) => !p.isLastOne);
-    const regularCost = regular.reduce(
-      (sum, prize) => sum + (Number(prize.cost) || 0) * (Number(prize.quantity) || 0),
-      0
-    );
-    const lastOne = product.lastOne;
-    const hasLastOne =
-      Boolean(product.lastOneEnabled) &&
-      lastOne &&
-      (lastOne.name || lastOne.image);
-    const lastOneCost = hasLastOne ? Number(lastOne.cost) || 0 : 0;
-    const totalCost = regularCost + lastOneCost;
-    const evPerDraw = totalCost / totalDraws;
-    const marginPerDraw = price - evPerDraw;
-    const marginRate = price > 0 ? marginPerDraw / price : 0;
-    const totalRevenue = price * totalDraws;
-    const totalMargin = totalRevenue - totalCost;
-
-    return {
-      totalCost,
-      evPerDraw,
-      marginPerDraw,
-      marginRate,
-      totalRevenue,
-      totalMargin,
-      isLoss: marginPerDraw < 0,
-    };
+  function getTargetMarginRate() {
+    const slider = document.getElementById("econ-target-margin");
+    if (slider) return Number(slider.value) / 100;
+    return state.targetMarginRate;
   }
 
-  function economicsRow(label, valueNode) {
-    return el("div", { className: "economics-row" }, [
-      el("span", { className: "economics-row__label", text: label }),
-      valueNode,
-    ]);
+  function computeEconomics(product) {
+    return DotteryEconomics.computeEconomics(product, null, {
+      targetMarginRate: getTargetMarginRate(),
+    });
+  }
+
+  function profitValueClass(value) {
+    const amount = Number(value) || 0;
+    if (amount > 0) return " economics-summary__value--profit";
+    if (amount < 0) return " economics-summary__value--loss";
+    return "";
+  }
+
+  function formatPriceDelta(delta) {
+    const amount = Math.abs(Number(delta) || 0);
+    if (amount < 0.5) return "與建議價相同";
+    const money = formatMoney(amount).replace(/^NT\$ /, "");
+    if (delta > 0) return `偏高 NT$ ${money}`;
+    return `偏低 NT$ ${money}`;
+  }
+
+  function renderEconomicsPanel(econ) {
+    const stop = econ.stopModel || {};
+    return el(
+      "div",
+      {
+        className: `economics-panel${econ.isLoss ? " economics-panel--loss" : ""}`,
+        id: "economics-panel",
+      },
+      [
+        stop.invalidMajorCount
+          ? el("div", {
+              className: "economics-warning",
+              id: "econ-major-warning",
+              text: "大獎份數不能超過總張數",
+            })
+          : el("div", {
+              className: "economics-warning is-hidden",
+              id: "econ-major-warning",
+            }),
+        el("div", { className: "economics-summary" }, [
+          el("div", { className: "economics-summary__row" }, [
+            el("span", {
+              className: "economics-summary__label",
+              text: "長期期望利潤（理論值）",
+            }),
+            el("span", {
+              className: `economics-summary__value${profitValueClass(econ.expectedProfit)}`,
+              id: "econ-expected-profit",
+              text: formatMoney(econ.expectedProfit),
+            }),
+          ]),
+          el("div", { className: "economics-summary__row" }, [
+            el("span", { className: "economics-summary__label", text: "期望利潤率" }),
+            el("span", {
+              className: `economics-summary__value${profitValueClass(econ.expectedProfit)}`,
+              id: "econ-expected-profit-rate",
+              text: formatRate(econ.expectedProfitRate),
+            }),
+          ]),
+          el("div", { className: "economics-summary__row economics-summary__row--slider" }, [
+            el("span", { className: "economics-summary__label", text: "目標利潤率" }),
+            el("div", { className: "economics-slider" }, [
+              el("input", {
+                type: "range",
+                min: "0",
+                max: "90",
+                step: "1",
+                value: String(Math.round(getTargetMarginRate() * 100)),
+                id: "econ-target-margin",
+                onInput: (event) => {
+                  state.targetMarginRate = Number(event.target.value) / 100;
+                  const label = document.getElementById("econ-target-margin-label");
+                  if (label) label.textContent = formatRate(state.targetMarginRate);
+                  if (state.product) refreshProductEconomics(state.product);
+                },
+              }),
+              el("span", {
+                className: "economics-slider__value",
+                id: "econ-target-margin-label",
+                text: formatRate(getTargetMarginRate()),
+              }),
+            ]),
+          ]),
+          el("div", { className: "economics-summary__row" }, [
+            el("span", { className: "economics-summary__label", text: "建議單抽價格" }),
+            el("span", {
+              className: "economics-summary__value",
+              id: "econ-suggested-price",
+              text: formatMoney(econ.suggestedPrice),
+            }),
+          ]),
+          el("div", { className: "economics-summary__compare", id: "econ-price-compare", text: formatPriceDelta(econ.priceDelta) }),
+        ]),
+      ]
+    );
+  }
+
+  function refreshProductEconomics(product) {
+    if (!product) return;
+    const next = computeEconomics(product);
+    const panel = document.getElementById("economics-panel");
+    const profitEl = document.getElementById("econ-expected-profit");
+    const rateEl = document.getElementById("econ-expected-profit-rate");
+    const suggestedEl = document.getElementById("econ-suggested-price");
+    const compareEl = document.getElementById("econ-price-compare");
+    const warningEl = document.getElementById("econ-major-warning");
+    if (!panel || !profitEl || !rateEl || !suggestedEl || !compareEl) return;
+    panel.className = `economics-panel${next.isLoss ? " economics-panel--loss" : ""}`;
+    profitEl.textContent = formatMoney(next.expectedProfit);
+    profitEl.className = `economics-summary__value${profitValueClass(next.expectedProfit)}`;
+    rateEl.textContent = formatRate(next.expectedProfitRate);
+    rateEl.className = `economics-summary__value${profitValueClass(next.expectedProfit)}`;
+    suggestedEl.textContent = formatMoney(next.suggestedPrice);
+    compareEl.textContent = formatPriceDelta(next.priceDelta);
+    if (warningEl) {
+      const invalid = Boolean(next.stopModel && next.stopModel.invalidMajorCount);
+      warningEl.textContent = invalid ? "大獎份數不能超過總張數" : "";
+      warningEl.className = `economics-warning${invalid ? "" : " is-hidden"}`;
+    }
   }
 
   function regularPrizeTotal(product) {
@@ -386,10 +476,7 @@
 
   function countTopPrizesRemaining(remaining) {
     if (!remaining || !remaining.length) return { left: 0, total: 0 };
-    const top = remaining.filter((item) => {
-      const g = String(item.grade || "").toUpperCase();
-      return g === "A" || g === "B" || g.startsWith("A") || g.startsWith("B");
-    });
+    const top = remaining.slice(0, 2);
     if (!top.length) {
       const all = remaining.reduce(
         (acc, item) => {
@@ -481,7 +568,6 @@
       price: 0,
       category: "",
       totalDraws: 12,
-      cols: 4,
       theme: "light",
       foilPreset: "silver",
       foilImage: "",
@@ -925,7 +1011,7 @@
                   }),
                   el("div", {
                     className: "dash-timeline__meta",
-                    text: `#${item.number} · ${item.prize ? item.prize.grade : "—"} · ${item.prize ? item.prize.name : "—"}`,
+                    text: `#${item.number} · ${item.prize ? item.prize.name : "—"}`,
                   }),
                 ]),
               ])
@@ -1287,7 +1373,7 @@
         el("div", {
           className: `status-slot ${slot.scratched ? "is-open" : ""}`,
           text: slot.scratched ? `${slot.number}` : String(slot.slotIndex + 1),
-          title: slot.scratched && slot.prize ? `${slot.prize.grade} ${slot.prize.name}` : "",
+          title: slot.scratched && slot.prize ? slot.prize.name : "",
         })
       )
     );
@@ -1308,7 +1394,7 @@
                 el("div", {}, [
                   el("div", {
                     className: "log-item__body",
-                    text: `#${item.number} (${item.prize ? item.prize.grade : "—"})`,
+                    text: `#${item.number}`,
                   }),
                   el("div", {
                     className: "log-item__meta",
@@ -1347,10 +1433,10 @@
           }),
         ]),
         el("div", { className: "stat-card" }, [
-          el("div", { className: "stat-card__label", text: "單抽期望值" }),
+          el("div", { className: "stat-card__label", text: "長期期望利潤" }),
           el("div", {
-            className: "stat-card__value",
-            text: formatMoney(economics.evPerDraw),
+            className: `stat-card__value${economics.expectedProfit < 0 ? " stat-card__value--loss" : economics.expectedProfit > 0 ? " stat-card__value--profit" : ""}`,
+            text: formatMoney(economics.expectedProfit),
           }),
         ]),
         el("div", { className: "stat-card" }, [
@@ -1426,15 +1512,9 @@
     const total = regularPrizeTotal(product);
     const match = total === Number(product.totalDraws);
     const hasPreview = showPreview(product);
+    const econ = computeEconomics(product);
 
     const prizes = (product.prizes || []).map((prize, index) => {
-      const grade = bindValue(
-        el("input", { disabled: locked }),
-        () => prize.grade,
-        (v) => {
-          prize.grade = v;
-        }
-      );
       const name = bindValue(
         el("input", { disabled: locked }),
         () => prize.name,
@@ -1459,12 +1539,12 @@
         () => String(prize.cost ?? 0),
         (v) => {
           prize.cost = Math.max(0, Number(v) || 0);
-          renderEditEconomics();
+          refreshProductEconomics(product);
         }
       );
       cost.addEventListener("change", () => {
         prize.cost = Math.max(0, Number(cost.value) || 0);
-        renderEditEconomics();
+        refreshProductEconomics(product);
       });
 
       return el("div", { className: "prize-row" }, [
@@ -1475,7 +1555,6 @@
           : imagePicker(prize.image, (url) => {
               prize.image = url;
             }),
-        grade,
         name,
         qty,
         cost,
@@ -1505,91 +1584,10 @@
       const next = regularPrizeTotal(product);
       summary.textContent = `目前總數 ${next}/${product.totalDraws}`;
       summary.className = `summary-bar ${next === Number(product.totalDraws) ? "is-ok" : ""}`;
-      renderEditEconomics();
+      refreshProductEconomics(product);
     }
 
-    const econ = computeEconomics(product);
-    const economicsPanel = el(
-      "div",
-      {
-        className: `economics-panel${econ.isLoss ? " economics-panel--loss" : ""}`,
-        id: "economics-panel",
-      },
-      [
-        el("div", { className: "panel__title", text: "期望值" }),
-        el("div", { className: "economics-grid" }, [
-          economicsRow(
-            "單抽售價",
-            el("span", { className: "economics-row__value", id: "econ-price", text: formatMoney(product.price) })
-          ),
-          economicsRow(
-            "單抽期望值",
-            el("span", { className: "economics-row__value", id: "econ-ev", text: formatMoney(econ.evPerDraw) })
-          ),
-          economicsRow(
-            "單抽毛利",
-            el("span", {
-              className: "economics-row__value",
-              id: "econ-margin",
-              text: formatMoney(econ.marginPerDraw),
-            })
-          ),
-          economicsRow(
-            "毛利率",
-            el("span", {
-              className: "economics-row__value",
-              id: "econ-rate",
-              text: formatRate(econ.marginRate),
-            })
-          ),
-          economicsRow(
-            "總成本",
-            el("span", {
-              className: "economics-row__value",
-              id: "econ-total-cost",
-              text: formatMoney(econ.totalCost),
-            })
-          ),
-          economicsRow(
-            "總售價",
-            el("span", {
-              className: "economics-row__value",
-              id: "econ-total-revenue",
-              text: formatMoney(econ.totalRevenue),
-            })
-          ),
-          economicsRow(
-            "預估毛利",
-            el("span", {
-              className: "economics-row__value",
-              id: "econ-total-margin",
-              text: formatMoney(econ.totalMargin),
-            })
-          ),
-        ]),
-      ]
-    );
-
-    function renderEditEconomics() {
-      const next = computeEconomics(product);
-      const panel = document.getElementById("economics-panel");
-      const priceEl = document.getElementById("econ-price");
-      const evEl = document.getElementById("econ-ev");
-      const marginEl = document.getElementById("econ-margin");
-      const rateEl = document.getElementById("econ-rate");
-      const totalCostEl = document.getElementById("econ-total-cost");
-      const totalRevenueEl = document.getElementById("econ-total-revenue");
-      const totalMarginEl = document.getElementById("econ-total-margin");
-      if (!panel || !priceEl) return;
-      panel.className = `economics-panel${next.isLoss ? " economics-panel--loss" : ""}`;
-      priceEl.textContent = formatMoney(product.price);
-      evEl.textContent = formatMoney(next.evPerDraw);
-      marginEl.textContent = formatMoney(next.marginPerDraw);
-      rateEl.textContent = formatRate(next.marginRate);
-      totalCostEl.textContent = formatMoney(next.totalCost);
-      totalRevenueEl.textContent = formatMoney(next.totalRevenue);
-      totalMarginEl.textContent = formatMoney(next.totalMargin);
-    }
+    const economicsPanel = renderEconomicsPanel(econ);
 
     const toolbar = el("div", { className: "editor-toolbar" }, [
       el("div", { className: "editor-toolbar__left" }, [
@@ -1704,7 +1702,7 @@
             () => String(product.price ?? 0),
             (v) => {
               product.price = Number(v) || 0;
-              renderEditEconomics();
+              refreshProductEconomics(product);
             }
           )
         ),
@@ -1716,17 +1714,6 @@
             input.addEventListener("input", () => {
               product.totalDraws = Math.max(1, Number(input.value) || 1);
               renderEditSummary();
-            });
-            return input;
-          })()
-        ),
-        field(
-          "欄數",
-          (() => {
-            const input = el("input", { type: "number", min: "1", disabled: locked });
-            input.value = String(product.cols);
-            input.addEventListener("input", () => {
-              product.cols = Math.max(1, Number(input.value) || 1);
             });
             return input;
           })()
@@ -1753,7 +1740,6 @@
       ]),
       el("div", { className: "prize-table-head" }, [
         el("span", { text: "圖片" }),
-        el("span", { text: "等級" }),
         el("span", { text: "名稱" }),
         el("span", { text: "數量" }),
         el("span", { text: "成本" }),
@@ -1791,13 +1777,6 @@
                 }),
             bindValue(
               el("input", { disabled: locked }),
-              () => product.lastOne.grade,
-              (v) => {
-                product.lastOne.grade = v;
-              }
-            ),
-            bindValue(
-              el("input", { disabled: locked }),
               () => product.lastOne.name,
               (v) => {
                 product.lastOne.name = v;
@@ -1809,7 +1788,7 @@
               () => String(product.lastOne.cost ?? 0),
               (v) => {
                 product.lastOne.cost = Math.max(0, Number(v) || 0);
-                renderEditEconomics();
+                refreshProductEconomics(product);
               }
             ),
             el("div"),
@@ -1925,14 +1904,12 @@
         price: product.price,
         category: product.category,
         totalDraws: product.totalDraws,
-        cols: product.cols,
         theme: product.theme,
         foilPreset: product.foilPreset,
         foilImage: product.foilImage,
         showRemaining: product.showRemaining,
         prizes: (product.prizes || []).map((p) => ({
           id: p.id || undefined,
-          grade: p.grade,
           name: p.name,
           image: p.image,
           quantity: Number(p.quantity) || 1,
@@ -1944,7 +1921,6 @@
           (product.lastOne.name || product.lastOne.image)
             ? {
                 id: product.lastOne.id || undefined,
-                grade: product.lastOne.grade || "最後賞",
                 name: product.lastOne.name,
                 image: product.lastOne.image,
                 cost: Number(product.lastOne.cost) || 0,

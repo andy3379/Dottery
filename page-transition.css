@@ -1,0 +1,81 @@
+:root {
+  --page-x-ease: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  --page-x-duration: 0.32s;
+  --page-x-sheet-shop: #f3f3f8;
+  --page-x-sheet-board: #ffffff;
+}
+
+html {
+  background: var(--page-x-sheet-shop);
+}
+
+html[data-board-theme] {
+  background: var(--page-bg, var(--page-x-sheet-board));
+}
+
+html.page-x-prep--to-board {
+  background: var(--page-x-sheet-board);
+}
+
+html.page-x-prep--to-shop {
+  background: var(--page-x-sheet-shop);
+}
+
+.page-stage {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  min-height: 100dvh;
+  transform: translate3d(0, 0, 0);
+  backface-visibility: hidden;
+}
+
+.page-sheet {
+  display: none;
+}
+
+@keyframes page-x-in-board {
+  from {
+    transform: translate3d(12%, 0, 0) scale(0.978);
+    opacity: 0.88;
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+@keyframes page-x-in-shop {
+  from {
+    transform: translate3d(-12%, 0, 0) scale(0.978);
+    opacity: 0.88;
+  }
+  to {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 1;
+  }
+}
+
+html.page-x-prep--to-board .page-stage {
+  animation: page-x-in-board var(--page-x-duration) var(--page-x-ease) both;
+}
+
+html.page-x-prep--to-shop .page-stage {
+  animation: page-x-in-shop var(--page-x-duration) var(--page-x-ease) both;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  :root {
+    --page-x-duration: 0.14s;
+  }
+
+  @keyframes page-x-in-board {
+    from { opacity: 0.94; }
+    to { opacity: 1; }
+  }
+
+  @keyframes page-x-in-shop {
+    from { opacity: 0.94; }
+    to { opacity: 1; }
+  }
+}

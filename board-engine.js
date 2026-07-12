@@ -5,8 +5,6 @@
   const LOD_1_MAX = 36;
   const TILE_SLOT_COLS = 8;
   const TILE_SLOT_ROWS = 8;
-  const SCRATCH_SIZE_RATIO = 0.25;
-  const FLY_APPROACH_RATIO = 0.22;
   const PAN_CLICK_THRESHOLD = 6;
 
   const FOIL_FILL = {
@@ -46,7 +44,10 @@
       tapCandidate: null,
       getFoilOptions: options.getFoilOptions || (() => ({ preset: "silver", imageUrl: "" })),
       getSlotData: options.getSlotData || (() => null),
+      getSlotResidueThumb: options.getSlotResidueThumb || null,
       onSlotTap: options.onSlotTap || null,
+      onSlotRecycle: options.onSlotRecycle || null,
+      onSlotEnsure: options.onSlotEnsure || null,
       displayCols: 4,
       displayRows: 1,
     };
@@ -60,24 +61,10 @@
     }
 
     function computeDisplayCols() {
-      const { slotCount, cols } = state.product;
-      if (slotCount <= 36) return cols;
-
+      const { slotCount } = state.product;
       const vw = viewport.clientWidth;
       const vh = viewport.clientHeight;
-      const aspect = vw / Math.max(vh, 1);
-      let targetCols = Math.round(Math.sqrt(slotCount * aspect));
-      targetCols = clamp(targetCols, 8, Math.min(32, slotCount));
-
-      let rows = Math.ceil(slotCount / targetCols);
-      const gridAspect = targetCols / Math.max(rows, 1);
-      if (gridAspect < aspect * 0.85 && targetCols < Math.min(32, slotCount)) {
-        targetCols = clamp(targetCols + 1, 8, Math.min(32, slotCount));
-      } else if (gridAspect > aspect * 1.15 && targetCols > 8) {
-        targetCols = clamp(targetCols - 1, 8, Math.min(32, slotCount));
-      }
-
-      return targetCols;
+      return ProductStore.computeOptimalCols(slotCount, vw / Math.max(vh, 1));
     }
 
     function syncDisplayLayout() {
@@ -87,7 +74,12 @@
       state.displayRows = Math.ceil(state.product.slotCount / nextCols);
       setupBoardDimensions();
       if (changed) {
-        state.slotPool.forEach((handle) => handle.slot.remove());
+        state.slotPool.forEach((handle, index) => {
+          if (typeof state.onSlotRecycle === "function") {
+            state.onSlotRecycle(index, handle);
+          }
+          handle.slot.remove();
+        });
         state.slotPool.clear();
         state.tiles.forEach((tile) => tile.canvas.remove());
         state.tiles.clear();
@@ -159,17 +151,6 @@
       return getLayout().slotSize * state.camera.scale;
     }
 
-    function getScratchThresholdPx() {
-      const maxVisual = getMaxScale() * getLayout().slotSize;
-      const ratioThreshold =
-        Math.min(viewport.clientWidth, viewport.clientHeight) * SCRATCH_SIZE_RATIO;
-      return Math.min(ratioThreshold, maxVisual * 0.95);
-    }
-
-    function canEnterScratch() {
-      return getVisualSlotSize() >= getScratchThresholdPx();
-    }
-
     function getLodLevel(visualSize) {
       if (state.mode === "scratch") return 3;
       if (visualSize < LOD_0_MAX) return 0;
@@ -227,6 +208,20 @@
       const { slotSize, zoomTargetSize } = getLayout();
       const targetSize = Math.min(vw * 0.72, zoomTargetSize);
       const scale = targetSize / slotSize;
+      return {
+        tx: vw / 2 - center.x * scale,
+        ty: vh / 2 - center.y * scale,
+        scale,
+      };
+    }
+
+    function getSlotAlignCamera(index) {
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+      const center = getSlotCenter(index);
+      const { slotSize } = getLayout();
+      const alignVisual = LOD_1_MAX + 6;
+      const scale = clamp(alignVisual / slotSize, getMinScale(), getMaxScale());
       return {
         tx: vw / 2 - center.x * scale,
         ty: vh / 2 - center.y * scale,
@@ -345,10 +340,26 @@
       );
     }
 
+    async function flyToSlotDetail(index) {
+      state.isAnimating = true;
+      try {
+        await flyTo(getSlotAlignCamera(index), true);
+        await flyTo(getDetailCamera(index), true);
+      } finally {
+        state.isAnimating = false;
+      }
+    }
+
     function getOpenedFill() {
       const theme = state.product.theme || "light";
       if (theme === "dark") return "#404040";
       return "#e5e5e5";
+    }
+
+    function getVisitedFill() {
+      const theme = state.product.theme || "light";
+      if (theme === "dark") return "#4f4f4f";
+      return "#cfcfcf";
     }
 
     function getFoilFill() {
@@ -356,15 +367,34 @@
       return FOIL_FILL[foil.preset] || FOIL_FILL.silver;
     }
 
-    function drawSlotCircle(ctx, slotData, x, y, radius) {
+    function drawSlotCircle(ctx, slotData, x, y, radius, index) {
+      const scratched = slotData && slotData.scratched;
+      const visited = slotData && slotData.visited;
+      const thumb =
+        typeof state.getSlotResidueThumb === "function"
+          ? state.getSlotResidueThumb(index)
+          : null;
+
       ctx.beginPath();
       ctx.arc(x, y, radius, 0, Math.PI * 2);
-      if (slotData && slotData.scratched) {
+      if (scratched) {
         ctx.fillStyle = getOpenedFill();
+      } else if (visited) {
+        ctx.fillStyle = getVisitedFill();
       } else {
         ctx.fillStyle = getFoilFill();
       }
       ctx.fill();
+
+      if (thumb) {
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.clip();
+        const size = radius * 2;
+        ctx.drawImage(thumb, x - radius, y - radius, size, size);
+        ctx.restore();
+      }
     }
 
     function drawFullBoard() {
@@ -385,7 +415,7 @@
       const radius = slotSize / 2;
       for (let index = 0; index < state.product.slotCount; index++) {
         const center = getSlotCenter(index);
-        drawSlotCircle(ctx, state.getSlotData(index), center.x, center.y, radius);
+        drawSlotCircle(ctx, state.getSlotData(index), center.x, center.y, radius, index);
       }
       state.fullBoardDirty = false;
     }
@@ -464,7 +494,7 @@
           if (index >= state.product.slotCount) continue;
           const localX = col * step - bounds.x + slotSize / 2;
           const localY = row * step - bounds.y + slotSize / 2;
-          drawSlotCircle(ctx, state.getSlotData(index), localX, localY, radius);
+          drawSlotCircle(ctx, state.getSlotData(index), localX, localY, radius, index);
         }
       }
 
@@ -558,6 +588,9 @@
       boardSlots.appendChild(slot);
       const handle = { slot, preview, scratchHost, numberEl };
       state.slotPool.set(index, handle);
+      if (typeof state.onSlotEnsure === "function") {
+        state.onSlotEnsure(index, handle);
+      }
       return handle;
     }
 
@@ -594,6 +627,9 @@
 
       state.slotPool.forEach((handle, index) => {
         if (!needed.has(index)) {
+          if (typeof state.onSlotRecycle === "function") {
+            state.onSlotRecycle(index, handle);
+          }
           handle.slot.remove();
           state.slotPool.delete(index);
         }
@@ -627,7 +663,12 @@
         state.tiles.clear();
       }
       if (!showSlots && state.mode !== "scratch") {
-        state.slotPool.forEach((handle) => handle.slot.remove());
+        state.slotPool.forEach((handle, index) => {
+          if (typeof state.onSlotRecycle === "function") {
+            state.onSlotRecycle(index, handle);
+          }
+          handle.slot.remove();
+        });
         state.slotPool.clear();
       }
     }
@@ -641,6 +682,10 @@
       if (lod !== state.lod) {
         state.lod = lod;
         setLayerVisibility(lod);
+        if (lod === 0) state.fullBoardDirty = true;
+        if (lod === 1) {
+          state.tiles.forEach((_tile, key) => state.dirtyTiles.add(key));
+        }
       }
 
       if (lod === 0) {
@@ -725,21 +770,7 @@
 
     async function handleSlotTap(index) {
       if (state.isAnimating || state.mode === "scratch") return;
-      if (canEnterScratch()) {
-        if (typeof state.onSlotTap === "function") {
-          state.onSlotTap(index);
-        }
-        return;
-      }
-      const approachScale = Math.max(
-        state.camera.scale * 1.6,
-        (Math.min(viewport.clientWidth, viewport.clientHeight) * FLY_APPROACH_RATIO) /
-          getLayout().slotSize
-      );
-      state.isAnimating = true;
-      await flyToSlot(index, approachScale, true);
-      state.isAnimating = false;
-      if (canEnterScratch() && typeof state.onSlotTap === "function") {
+      if (typeof state.onSlotTap === "function") {
         state.onSlotTap(index);
       }
     }
@@ -895,8 +926,10 @@
       getVisualSlotSize,
       getSlotHandle,
       getDetailCamera,
+      getSlotAlignCamera,
       flyTo,
       flyToSlot,
+      flyToSlotDetail,
       saveNavigateSnapshot,
       getNavigateSnapshot,
       setScratchMode,

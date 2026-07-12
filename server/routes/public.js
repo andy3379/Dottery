@@ -7,6 +7,8 @@ const {
   buildProductDetail,
   claimSlot,
   scratchSlot,
+  getScratchSnapshots,
+  saveScratchSnapshot,
   getSettings,
 } = require("../helpers");
 
@@ -76,6 +78,30 @@ function createPublicRouter(db) {
     }
 
     const result = scratchSlot(db, req.params.id, slotIndex);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json(result.result);
+  });
+
+  router.get("/products/:id/scratch-snapshots", (req, res) => {
+    const result = getScratchSnapshots(db, req.params.id);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json(result);
+  });
+
+  router.put("/products/:id/slots/:index/scratch-snapshot", (req, res) => {
+    const slotIndex = Number(req.params.index);
+    if (!Number.isInteger(slotIndex) || slotIndex < 0) {
+      res.status(400).json({ error: "格子索引無效" });
+      return;
+    }
+
+    const result = saveScratchSnapshot(db, req.params.id, slotIndex, req.body || {});
     if (result.error) {
       res.status(result.status).json({ error: result.error });
       return;

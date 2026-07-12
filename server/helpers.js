@@ -1,6 +1,7 @@
 "use strict";
 
 const { nanoid } = require("nanoid");
+const { computeEconomics } = require("../admin/economics");
 
 const STATUSES = ["draft", "published", "unpublished"];
 const THEMES = ["light", "warm", "cool", "dark", "rose"];
@@ -21,6 +22,36 @@ function shuffle(array) {
   return items;
 }
 
+function clamp(value, min, max) {
+  return Math.max(min, Math.min(max, value));
+}
+
+function computeOptimalCols(slotCount, aspect) {
+  if (slotCount <= 1) return 1;
+  const ratio = aspect > 0 ? aspect : 1;
+  let minCols = 2;
+  if (slotCount > 12) minCols = 4;
+  if (slotCount > 36) minCols = 8;
+  const maxCols = slotCount;
+
+  let targetCols = Math.round(Math.sqrt(slotCount * ratio));
+  targetCols = clamp(targetCols, minCols, maxCols);
+
+  for (let i = 0; i < 12; i++) {
+    const rows = Math.ceil(slotCount / targetCols);
+    const gridAspect = targetCols / Math.max(rows, 1);
+    if (gridAspect < ratio * 0.92 && targetCols < maxCols) {
+      targetCols += 1;
+    } else if (gridAspect > ratio * 1.08 && targetCols > minCols) {
+      targetCols -= 1;
+    } else {
+      break;
+    }
+  }
+
+  return targetCols;
+}
+
 function rowToProduct(row) {
   if (!row) return null;
   return {
@@ -32,7 +63,7 @@ function rowToProduct(row) {
     category: row.category,
     totalDraws: row.total_draws,
     slotCount: row.total_draws,
-    cols: row.cols,
+    cols: computeOptimalCols(row.total_draws),
     status: row.status,
     theme: row.theme,
     foilPreset: row.foil_preset,
@@ -103,7 +134,25 @@ function getScratchedCount(db, productId) {
   return row ? row.count : 0;
 }
 
+function prizeNumberMap(db, productId) {
+  const rows = db
+    .prepare(
+      `SELECT s.number, s.prize_id
+       FROM slots s
+       WHERE s.product_id = ?
+       ORDER BY s.number ASC`
+    )
+    .all(productId);
+  const map = new Map();
+  rows.forEach((row) => {
+    if (!map.has(row.prize_id)) map.set(row.prize_id, []);
+    map.get(row.prize_id).push(row.number);
+  });
+  return map;
+}
+
 function remainingByPrize(db, productId) {
+  const numberMap = prizeNumberMap(db, productId);
   return db
     .prepare(
       `SELECT p.id, p.grade, p.name, p.image, p.quantity, p.is_last_one,
@@ -117,11 +166,11 @@ function remainingByPrize(db, productId) {
     .all(productId)
     .map((row) => ({
       id: row.id,
-      grade: row.grade,
       name: row.name,
       image: row.image,
       quantity: row.quantity,
       remaining: row.remaining,
+      numbers: numberMap.get(row.id) || [],
     }));
 }
 
@@ -241,34 +290,6 @@ function normalizePrizeInput(input, index) {
   };
 }
 
-function computeEconomics(product, prizes) {
-  const totalDraws = Math.max(1, Number(product.total_draws ?? product.totalDraws) || 1);
-  const price = Number(product.price) || 0;
-  const regular = (prizes || []).filter((p) => !p.isLastOne);
-  const lastOne = (prizes || []).find((p) => p.isLastOne);
-  const regularCost = regular.reduce(
-    (sum, prize) => sum + (Number(prize.cost) || 0) * (Number(prize.quantity) || 0),
-    0
-  );
-  const lastOneCost =
-    lastOne && (lastOne.name || lastOne.grade) ? Number(lastOne.cost) || 0 : 0;
-  const totalCost = regularCost + lastOneCost;
-  const evPerDraw = totalCost / totalDraws;
-  const marginPerDraw = price - evPerDraw;
-  const marginRate = price > 0 ? marginPerDraw / price : 0;
-  const totalRevenue = price * totalDraws;
-  const totalMargin = totalRevenue - totalCost;
-
-  return {
-    totalCost,
-    evPerDraw,
-    marginPerDraw,
-    marginRate,
-    totalRevenue,
-    totalMargin,
-    isLoss: marginPerDraw < 0,
-  };
-}
 
 function validatePublish(product, prizes) {
   const regular = prizes.filter((p) => !p.isLastOne);
@@ -279,8 +300,8 @@ function validatePublish(product, prizes) {
   }
 
   if (lastOnes.length === 1) {
-    if (!lastOnes[0].name || !lastOnes[0].grade) {
-      return "最後賞需有獎級與名稱";
+    if (!lastOnes[0].name) {
+      return "最後賞需有名稱";
     }
   }
 
@@ -289,8 +310,8 @@ function validatePublish(product, prizes) {
   }
 
   for (const prize of regular) {
-    if (!prize.grade || !prize.name) {
-      return "每個獎項需有獎級與名稱";
+    if (!prize.name) {
+      return "每個獎項需有名稱";
     }
     if (prize.quantity < 1) {
       return "獎項數量至少為 1";
@@ -487,6 +508,7 @@ function scratchSlot(db, productId, slotIndex) {
     db.prepare(
       `UPDATE slots SET scratched = 1, scratched_at = ? WHERE id = ?`
     ).run(nowIso(), slot.id);
+    deleteScratchSnapshot(db, productId, slotIndex);
   }
 
   const nextCount = getScratchedCount(db, productId);
@@ -566,12 +588,8 @@ function saveSettings(db, input) {
 
 function countTopPrizesRemaining(remaining) {
   if (!remaining || !remaining.length) return { left: 0, total: 0 };
-  const top = remaining.filter((item) => {
-    const g = String(item.grade || "").toUpperCase();
-    return g === "A" || g === "B" || g.startsWith("A") || g.startsWith("B");
-  });
-  const list = top.length ? top : remaining;
-  return list.reduce(
+  const top = remaining.slice(0, 2);
+  return top.reduce(
     (acc, item) => {
       acc.left += Number(item.remaining) || 0;
       acc.total += Number(item.quantity) || 0;
@@ -870,6 +888,98 @@ function buildDashboard(db, options = {}) {
   };
 }
 
+function getScratchSnapshots(db, productId) {
+  const product = db.prepare(`SELECT id, status FROM products WHERE id = ?`).get(productId);
+  if (!product || product.status !== "published") {
+    return { error: "找不到商品", status: 404 };
+  }
+
+  const rows = db
+    .prepare(
+      `SELECT slot_index, width, height, image, number, sealed, updated_at
+       FROM scratch_snapshots WHERE product_id = ?`
+    )
+    .all(productId);
+
+  const snapshots = {};
+  rows.forEach((row) => {
+    snapshots[String(row.slot_index)] = {
+      width: row.width,
+      height: row.height,
+      image: row.image,
+      number: row.number ?? null,
+      sealed: Boolean(row.sealed),
+      updatedAt: row.updated_at,
+    };
+  });
+
+  return { snapshots };
+}
+
+function saveScratchSnapshot(db, productId, slotIndex, payload) {
+  const product = db.prepare(`SELECT id, status FROM products WHERE id = ?`).get(productId);
+  if (!product || product.status !== "published") {
+    return { error: "找不到商品", status: 404 };
+  }
+
+  const slot = db
+    .prepare(`SELECT scratched FROM slots WHERE product_id = ? AND slot_index = ?`)
+    .get(productId, slotIndex);
+  if (!slot) {
+    return { error: "找不到格子", status: 404 };
+  }
+  if (slot.scratched) {
+    return { error: "格子已刮開", status: 400 };
+  }
+
+  const width = Number(payload.width);
+  const height = Number(payload.height);
+  const image = String(payload.image || "");
+  if (!Number.isInteger(width) || width <= 0 || !Number.isInteger(height) || height <= 0 || !image) {
+    return { error: "快照資料無效", status: 400 };
+  }
+
+  const updatedAt = nowIso();
+  db.prepare(
+    `INSERT INTO scratch_snapshots (product_id, slot_index, width, height, image, number, sealed, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+     ON CONFLICT(product_id, slot_index) DO UPDATE SET
+       width = excluded.width,
+       height = excluded.height,
+       image = excluded.image,
+       number = excluded.number,
+       sealed = excluded.sealed,
+       updated_at = excluded.updated_at`
+  ).run(
+    productId,
+    slotIndex,
+    width,
+    height,
+    image,
+    payload.number != null ? Number(payload.number) : null,
+    payload.sealed ? 1 : 0,
+    updatedAt
+  );
+
+  return {
+    result: {
+      slotIndex,
+      width,
+      height,
+      number: payload.number != null ? Number(payload.number) : null,
+      sealed: Boolean(payload.sealed),
+      updatedAt,
+    },
+  };
+}
+
+function deleteScratchSnapshot(db, productId, slotIndex) {
+  db.prepare(`DELETE FROM scratch_snapshots WHERE product_id = ? AND slot_index = ?`).run(
+    productId,
+    slotIndex
+  );
+}
+
 module.exports = {
   STATUSES,
   THEMES,
@@ -895,8 +1005,12 @@ module.exports = {
   resetBoard,
   claimSlot,
   scratchSlot,
+  getScratchSnapshots,
+  saveScratchSnapshot,
+  deleteScratchSnapshot,
   getSettings,
   saveSettings,
   countTopPrizesRemaining,
   buildDashboard,
+  computeOptimalCols,
 };

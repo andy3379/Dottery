@@ -4,17 +4,52 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Dottery</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
   <link rel="stylesheet" href="/home.css" />
+  <link rel="stylesheet" href="/page-transition.css" />
+  <script src="/page-transition-prep.js"></script>
 </head>
 <body>
-  <div class="home" id="home">
-    <header class="home__header">
-      <div class="home__brand">Dottery</div>
-    </header>
-    <main class="home__main">
-      <div class="product-grid" id="productGrid"></div>
+  <div id="pageSheet" class="page-sheet" aria-hidden="true"></div>
+  <div id="pageStage" class="page-stage">
+  <div class="shop" id="shop">
+    <div class="shop__ambient" aria-hidden="true">
+      <span class="shop__ambient-blob shop__ambient-blob--a"></span>
+      <span class="shop__ambient-blob shop__ambient-blob--b"></span>
+      <span class="shop__ambient-blob shop__ambient-blob--c"></span>
+    </div>
+
+    <a class="shop-admin" href="/admin" aria-label="settings">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
+    </a>
+
+    <div class="search-float" id="searchFloat">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+      <input type="text" id="searchInput" aria-label="search" autocomplete="off" />
+    </div>
+
+    <button type="button" class="hero-edge hero-edge--prev" id="heroPrev" aria-label="previous" hidden>
+      <span class="hero-edge__arrow" aria-hidden="true"></span>
+    </button>
+    <button type="button" class="hero-edge hero-edge--next" id="heroNext" aria-label="next" hidden>
+      <span class="hero-edge__arrow" aria-hidden="true"></span>
+    </button>
+
+    <main class="shop__main">
+      <section class="hero" id="hero">
+        <div class="hero__stage" id="heroStage"></div>
+        <div class="hero__meta" id="heroMeta"></div>
+        <div class="hero__dots" id="heroDots"></div>
+      </section>
     </main>
   </div>
+  </div>
+  <script src="/page-transition.js"></script>
   <script src="/home.js"></script>
 </body>
 </html>

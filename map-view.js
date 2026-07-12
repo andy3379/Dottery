@@ -13,7 +13,10 @@
       selectedIndex: null,
       isAnimating: false,
       revealing: false,
+      scratchCommitRequired: false,
       scratchCards: new Map(),
+      scratchSnapshots: new Map(),
+      residueThumbs: new Map(),
       claims: new Map(),
       onSlotRevealed: options.onSlotRevealed || null,
       onSlotClaimed: options.onSlotClaimed || null,
@@ -27,9 +30,244 @@
       boardTiles: document.getElementById("boardTiles"),
       boardSlots: document.getElementById("boardSlots"),
       getFoilOptions: foilOptions,
-      getSlotData,
+      getSlotData: getSlotDataForEngine,
+      getSlotResidueThumb,
       onSlotTap: (index) => enterScratch(index),
+      onSlotRecycle: (index) => releaseScratchCard(index),
+      onSlotEnsure: (index, handle) => {
+        restoreSlotVisual(index, handle);
+      },
     });
+
+    async function finalizeOpenedSlot(index) {
+      const claim = state.claims.get(index);
+      const slotData = getSlotData(index);
+      const isOpened = Boolean(
+        (claim && claim.scratched) || (slotData && slotData.scratched)
+      );
+      if (!isOpened) return;
+
+      const handle = engine.getSlotHandle(index);
+      const number = claim?.number ?? slotData?.number;
+      handle.slot.classList.add("is-opened", "is-visited");
+      handle.preview.hidden = true;
+
+      const snap = state.scratchSnapshots.get(index);
+      const scratchCard = ensureScratchCard(index);
+      await scratchCard.resize();
+
+      if (scratchCard.isSealed()) {
+        await scratchCard.resize();
+        return;
+      }
+      if (snap) {
+        await scratchCard.importSealedState(snap, number);
+      } else {
+        await scratchCard.sealWithResidue(number);
+      }
+      const sealed = scratchCard.exportScratchState?.();
+      if (sealed) {
+        persistSnapshot(index, sealed, snapshotMeta(index, true));
+      }
+    }
+
+    async function syncAllOpenedSlots() {
+      const indices = new Set();
+      state.claims.forEach((claim, index) => {
+        if (claim.scratched) indices.add(index);
+      });
+      (state.product.slots || []).forEach((slotData) => {
+        if (slotData.scratched) indices.add(slotData.slotIndex);
+      });
+      await Promise.all([...indices].map((index) => finalizeOpenedSlot(index)));
+    }
+
+    function parkScratchResidue(index) {
+      const scratchCard = state.scratchCards.get(index);
+      if (!scratchCard) return null;
+
+      const snap = scratchCard.exportScratchState?.();
+      if (snap) {
+        persistSnapshot(index, snap, snapshotMeta(index));
+      }
+
+      const handle = engine.getSlotHandle(index);
+      if (handle) {
+        handle.slot.classList.add("is-visited");
+        const baked = snap || state.scratchSnapshots.get(index);
+        if (baked) {
+          void bakeResidueToPreview(handle, baked);
+        }
+        handle.preview.hidden = false;
+      }
+
+      scratchCard.disable();
+      return snap;
+    }
+
+    async function sealScratchResidue(index) {
+      const scratchCard = state.scratchCards.get(index);
+      if (!scratchCard) return;
+
+      const claim = state.claims.get(index);
+      const snap = state.scratchSnapshots.get(index) || scratchCard.exportScratchState?.();
+
+      if (claim && claim.scratched) {
+        await scratchCard.sealWithResidue(claim.number);
+      } else if (snap) {
+        const number = claim?.number ?? null;
+        if (number != null) scratchCard.setNumber(number);
+        await scratchCard.importScratchState(snap);
+        scratchCard.disable();
+      }
+
+      const sealed = scratchCard.exportScratchState?.();
+      if (sealed) {
+        persistSnapshot(index, sealed, snapshotMeta(index, true));
+      }
+
+      const handle = engine.getSlotHandle(index);
+      if (handle) {
+        handle.slot.classList.add("is-visited");
+        const baked = sealed || state.scratchSnapshots.get(index);
+        if (baked) {
+          await bakeResidueToPreview(handle, baked);
+        }
+        handle.preview.hidden = false;
+      }
+    }
+
+    function releaseScratchCard(index) {
+      parkScratchResidue(index);
+      const scratchCard = state.scratchCards.get(index);
+      if (!scratchCard) return;
+      scratchCard.destroy();
+      state.scratchCards.delete(index);
+    }
+
+    async function bakeResidueToPreview(handle, snap) {
+      const previewCanvas = handle.preview.querySelector(".slot__preview-canvas");
+      if (!previewCanvas || !snap || !window.ScratchPersist) return;
+      const px = previewCanvas.width;
+      if (!px) return;
+      const thumb = ScratchPersist.bakeResidueThumb(snap, px);
+      if (!thumb) return;
+      const ctx = previewCanvas.getContext("2d");
+      ctx.clearRect(0, 0, px, px);
+      ctx.drawImage(thumb, 0, 0, px, px);
+    }
+
+    async function restoreSlotVisual(index, handle) {
+      const slotData = getSlotData(index);
+      const claim = state.claims.get(index);
+      const isOpened = Boolean(
+        (slotData && slotData.scratched) || (claim && claim.scratched)
+      );
+      const snap = state.scratchSnapshots.get(index);
+      const number = claim?.number ?? slotData?.number;
+
+      if (isOpened) {
+        await finalizeOpenedSlot(index);
+        return;
+      }
+
+      if (!snap) return;
+
+      handle.slot.classList.add("is-visited");
+      await bakeResidueToPreview(handle, snap);
+      handle.preview.hidden = false;
+    }
+
+    function invalidateResidueThumb(index) {
+      state.residueThumbs.delete(index);
+    }
+
+    function getSlotResidueThumb(index) {
+      const snap = state.scratchSnapshots.get(index);
+      if (!snap || !window.ScratchPersist) return null;
+      if (state.residueThumbs.has(index)) {
+        return state.residueThumbs.get(index);
+      }
+      const thumb = ScratchPersist.bakeResidueThumb(snap, 48);
+      if (thumb) state.residueThumbs.set(index, thumb);
+      return thumb || null;
+    }
+
+    function getReturnCamera(index) {
+      const snap = index != null ? state.scratchSnapshots.get(index) : null;
+      const claim = index != null ? state.claims.get(index) : null;
+      const slotData = index != null ? getSlotData(index) : null;
+      const isOpened = Boolean(
+        (claim && claim.scratched) || (slotData && slotData.scratched)
+      );
+      if (snap && !isOpened) {
+        return engine.getSlotAlignCamera(index);
+      }
+      return engine.getNavigateSnapshot();
+    }
+
+    let popstateHandler = null;
+
+    function isSlotOpened(index) {
+      const slotData = getSlotData(index);
+      const claim = state.claims.get(index);
+      return Boolean((slotData && slotData.scratched) || (claim && claim.scratched));
+    }
+
+    function canLeaveScratch() {
+      return !state.scratchCommitRequired;
+    }
+
+    function syncScratchLockUI() {
+      const locked = state.scratchCommitRequired;
+      document.body.classList.toggle("is-scratch-locked", locked);
+      viewport.classList.toggle("is-scratch-locked", locked);
+      if (state.mode === "scratch") {
+        backBtn.hidden = false;
+        backBtn.disabled = locked;
+        backBtn.classList.toggle("is-locked", locked);
+      } else {
+        backBtn.disabled = false;
+        backBtn.classList.remove("is-locked");
+      }
+    }
+
+    function requireScratchCommit() {
+      if (state.scratchCommitRequired) return;
+      state.scratchCommitRequired = true;
+      syncScratchLockUI();
+      if (!popstateHandler) {
+        history.pushState({ scratchCommit: true }, "", location.href);
+        popstateHandler = () => {
+          if (!state.scratchCommitRequired) return;
+          history.pushState({ scratchCommit: true }, "", location.href);
+        };
+        window.addEventListener("popstate", popstateHandler);
+      }
+    }
+
+    function releaseScratchCommit() {
+      if (!state.scratchCommitRequired) return;
+      state.scratchCommitRequired = false;
+      syncScratchLockUI();
+      if (popstateHandler) {
+        window.removeEventListener("popstate", popstateHandler);
+        popstateHandler = null;
+      }
+    }
+
+    function evaluateScratchCommit(index) {
+      if (index == null || isSlotOpened(index)) return;
+      const snap = state.scratchSnapshots.get(index);
+      if (snap && ScratchCard.hasMeaningfulClearing(snap)) {
+        requireScratchCommit();
+        return;
+      }
+      const scratchCard = state.scratchCards.get(index);
+      if (scratchCard?.hasUserEngaged?.()) {
+        requireScratchCommit();
+      }
+    }
 
     function foilOptions() {
       return {
@@ -40,6 +278,101 @@
 
     function getSlotData(index) {
       return (state.product.slots || []).find((slot) => slot.slotIndex === index);
+    }
+
+    function getSlotDataForEngine(index) {
+      const slotData = getSlotData(index);
+      if (slotData && slotData.scratched) {
+        if (state.scratchSnapshots.has(index)) {
+          return { ...slotData, visited: true };
+        }
+        return slotData;
+      }
+      if (state.scratchSnapshots.has(index)) {
+        return {
+          ...(slotData || { slotIndex: index }),
+          visited: true,
+        };
+      }
+      return slotData || null;
+    }
+
+    function snapshotMeta(index, sealed) {
+      const claim = state.claims.get(index);
+      const slotData = getSlotData(index);
+      return {
+        number: claim?.number ?? slotData?.number ?? null,
+        sealed: Boolean(sealed),
+      };
+    }
+
+    function persistSnapshot(index, snap, meta) {
+      if (!snap) return;
+      state.scratchSnapshots.set(index, snap);
+      invalidateResidueThumb(index);
+      if (window.ScratchPersist) {
+        ScratchPersist.saveSlot(
+          state.product.id,
+          index,
+          snap,
+          meta || snapshotMeta(index)
+        );
+      }
+      engine.markSlotDirty(index);
+    }
+
+    async function hydratePersistedSnapshots() {
+      if (!window.ScratchPersist) return;
+      const loaded = await ScratchPersist.loadAll(state.product.id);
+      loaded.forEach((entry, index) => {
+        state.scratchSnapshots.set(index, entry.snap);
+        engine.markSlotDirty(index);
+        if (entry.number != null && !state.claims.has(index)) {
+          state.claims.set(index, {
+            slotIndex: index,
+            number: entry.number,
+            scratched: false,
+            prize: getSlotData(index)?.prize || null,
+            lastOneAwarded: null,
+            remaining: state.product.remaining,
+            scratchedCount: state.product.scratchedCount,
+            remainingDraws: state.product.remainingDraws,
+          });
+        }
+      });
+    }
+
+    async function syncPersistedVisitedSlots() {
+      const tasks = [];
+      state.scratchSnapshots.forEach((snap, index) => {
+        const slotData = getSlotData(index);
+        const claim = state.claims.get(index);
+        const isOpened = Boolean(
+          (slotData && slotData.scratched) || (claim && claim.scratched)
+        );
+        if (isOpened) return;
+        const handle = engine.getSlotHandle(index);
+        if (!handle) return;
+        tasks.push(restoreSlotVisual(index, handle));
+      });
+      await Promise.all(tasks);
+    }
+
+    function flushAllSnapshots() {
+      state.scratchCards.forEach((scratchCard, index) => {
+        const snap = scratchCard.exportScratchState?.();
+        if (snap) {
+          persistSnapshot(index, snap, snapshotMeta(index, scratchCard.isSealed?.()));
+        }
+      });
+      state.scratchSnapshots.forEach((snap, index) => {
+        if (!state.scratchCards.has(index)) {
+          persistSnapshot(index, snap, snapshotMeta(index));
+        }
+      });
+      if (window.ScratchPersist) {
+        ScratchPersist.flushPending(state.product.id);
+      }
     }
 
     function getVisualSlotSize() {
@@ -66,19 +399,32 @@
     }
 
     function ensureScratchCard(index) {
-      if (state.scratchCards.has(index)) {
-        return state.scratchCards.get(index);
+      const handle = engine.getSlotHandle(index);
+      let scratchCard = state.scratchCards.get(index);
+
+      if (scratchCard && scratchCard.element.parentElement !== handle.scratchHost) {
+        const snap = scratchCard.exportScratchState?.();
+        if (snap) {
+          persistSnapshot(index, snap, snapshotMeta(index));
+        }
+        scratchCard.destroy();
+        state.scratchCards.delete(index);
+        scratchCard = null;
       }
 
-      const handle = engine.getSlotHandle(index);
+      if (scratchCard) {
+        return scratchCard;
+      }
+
       const { layout } = state.product;
       const foil = foilOptions();
-      const scratchCard = ScratchCard.create(handle.scratchHost, {
+      scratchCard = ScratchCard.create(handle.scratchHost, {
         layoutSize: layout.slotSize,
         foilPreset: foil.preset,
         foilImage: foil.imageUrl,
         getVisualSize: () => getVisualSlotSize(),
         onReveal: () => commitScratch(index),
+        onScratchStart: () => requireScratchCommit(),
       });
       state.scratchCards.set(index, scratchCard);
       return scratchCard;
@@ -122,12 +468,23 @@
 
       state.claims.set(index, result);
 
+      if (window.ScratchPersist) {
+        ScratchPersist.removeSlot(state.product.id, index);
+      }
+      invalidateResidueThumb(index);
+      state.scratchSnapshots.delete(index);
+
+      releaseScratchCommit();
+
       if (typeof state.onSlotClaimed === "function") {
         state.onSlotClaimed(result, state.product);
       }
       if (typeof state.onSlotRevealed === "function") {
         state.onSlotRevealed(result, state.product);
       }
+      requestAnimationFrame(() => {
+        finalizeOpenedSlot(index);
+      });
     }
 
     async function claimSlot(index) {
@@ -166,6 +523,7 @@
     async function commitScratch(index) {
       const cached = state.claims.get(index);
       if (cached && cached.scratched) {
+        releaseScratchCommit();
         if (typeof state.onSlotRevealed === "function") {
           state.onSlotRevealed(cached, state.product);
         }
@@ -184,10 +542,12 @@
       handle.slot.classList.toggle("is-active", isActive);
       handle.slot.classList.toggle(
         "is-visited",
-        Boolean(scratchCard) || handle.slot.classList.contains("is-opened")
+        Boolean(scratchCard) ||
+          state.scratchSnapshots.has(index) ||
+          handle.slot.classList.contains("is-opened")
       );
       handle.preview.hidden = Boolean(
-        isActive || scratchCard || handle.slot.classList.contains("is-opened")
+        isActive || handle.slot.classList.contains("is-opened")
       );
     }
 
@@ -201,10 +561,16 @@
         return;
       }
 
-      requestAnimationFrame(() => {
-        if (scratchCard.isSealed()) return;
-        scratchCard.enable();
-      });
+      const snap = state.scratchSnapshots.get(index);
+      if (snap && !scratchCard.isSealed()) {
+        await scratchCard.importScratchState(snap);
+      }
+
+      if (!scratchCard.isSealed()) {
+        await scratchCard.enable();
+      }
+
+      evaluateScratchCommit(index);
     }
 
     function deactivateScratch(index) {
@@ -213,23 +579,31 @@
         scratchCard.disable();
       }
       setSlotVisual(index, false);
+      const handle = engine.getSlotHandle(index);
+      const snap = state.scratchSnapshots.get(index);
+      if (handle && snap && !handle.slot.classList.contains("is-opened")) {
+        void bakeResidueToPreview(handle, snap);
+        handle.preview.hidden = false;
+      }
     }
 
     async function enterScratch(index) {
       if (state.isAnimating || state.mode === "scratch" || state.revealing) return;
 
+      state.scratchCommitRequired = false;
       state.isAnimating = true;
       state.selectedIndex = index;
       engine.saveNavigateSnapshot();
 
       engine.getSlotHandle(index);
-      await engine.flyTo(engine.getDetailCamera(index), true);
+      await engine.flyToSlotDetail(index);
 
       engine.setScratchMode(index);
       state.mode = "scratch";
       await activateScratch(index);
 
       state.isAnimating = false;
+      syncScratchLockUI();
       backBtn.hidden = false;
       syncScratchSizes();
     }
@@ -240,31 +614,42 @@
         event.stopPropagation();
       }
       if (state.isAnimating || state.mode !== "scratch") return;
+      if (!canLeaveScratch()) return;
 
       state.isAnimating = true;
       const index = state.selectedIndex;
 
       try {
         if (index !== null) {
-          const scratchCard = state.scratchCards.get(index);
-          const claim = state.claims.get(index);
-          if (
-            scratchCard &&
-            claim &&
-            claim.scratched &&
-            scratchCard.isPrizeTriggered()
-          ) {
-            await scratchCard.sealWithResidue(claim.number);
-          }
+          await sealScratchResidue(index);
           deactivateScratch(index);
         }
 
         engine.setNavigateMode();
-        await engine.flyTo(engine.getNavigateSnapshot(), true);
+        await engine.flyTo(getReturnCamera(index), true);
 
         state.mode = "navigate";
         state.selectedIndex = null;
+        state.scratchCommitRequired = false;
+        releaseScratchCommit();
         backBtn.hidden = true;
+        backBtn.disabled = false;
+        backBtn.classList.remove("is-locked");
+        document.body.classList.remove("is-scratch-locked");
+        viewport.classList.remove("is-scratch-locked");
+
+        if (index !== null) {
+          await finalizeOpenedSlot(index);
+          const snap = state.scratchSnapshots.get(index);
+          if (snap) {
+            const handle = engine.getSlotHandle(index);
+            if (handle) {
+              await restoreSlotVisual(index, handle);
+            }
+          }
+        }
+        await syncAllOpenedSlots();
+        syncScratchSizes();
       } finally {
         state.isAnimating = false;
         engine.scheduleRender();
@@ -274,6 +659,10 @@
     function bindEvents() {
       backBtn.addEventListener("click", goBack);
       backBtn.addEventListener("touchend", (event) => {
+        if (!canLeaveScratch()) {
+          event.preventDefault();
+          return;
+        }
         event.preventDefault();
         goBack(event);
       });
@@ -281,29 +670,44 @@
         engine.handleResize();
         syncScratchSizes();
       });
+      window.addEventListener("pagehide", flushAllSnapshots);
+      window.addEventListener("beforeunload", (event) => {
+        flushAllSnapshots();
+        if (state.scratchCommitRequired) {
+          event.preventDefault();
+          event.returnValue = "";
+        }
+      });
+      window.addEventListener("dottery:before-page-leave", flushAllSnapshots);
+      document.addEventListener(
+        "click",
+        (event) => {
+          if (!state.scratchCommitRequired) return;
+          const link = event.target.closest('a[href="/shop"]');
+          if (!link) return;
+          event.preventDefault();
+          event.stopPropagation();
+        },
+        true
+      );
     }
 
     function applyTheme() {
-      document.body.dataset.theme = state.product.theme || "light";
+      const theme = state.product.theme || "light";
+      document.body.dataset.theme = theme;
+      document.documentElement.dataset.boardTheme = theme;
     }
 
     async function sealOpenedSlots() {
-      const tasks = [];
-      (state.product.slots || []).forEach((slotData) => {
-        if (!slotData.scratched) return;
-        engine.getSlotHandle(slotData.slotIndex);
-        const scratchCard = state.scratchCards.get(slotData.slotIndex);
-        if (scratchCard) {
-          tasks.push(scratchCard.sealWithResidue(slotData.number));
-        }
-      });
-      await Promise.all(tasks);
+      await syncAllOpenedSlots();
       syncScratchSizes();
     }
 
     function primeClaims() {
       state.claims = new Map();
       state.scratchCards.clear();
+      state.scratchSnapshots.clear();
+      state.residueThumbs.clear();
       (state.product.slots || []).forEach((slotData) => {
         if (!slotData.scratched) return;
         engine.markSlotDirty(slotData.slotIndex);
@@ -320,19 +724,26 @@
       });
     }
 
+    async function bootstrapVisualState() {
+      await hydratePersistedSnapshots();
+      await sealOpenedSlots();
+      await syncPersistedVisitedSlots();
+      syncScratchSizes();
+      engine.scheduleRender();
+    }
+
     function mount() {
       applyTheme();
       engine.mount(state.product);
       primeClaims();
       bindEvents();
-      requestAnimationFrame(() => {
-        syncScratchSizes();
-        sealOpenedSlots();
-      });
+      void bootstrapVisualState();
     }
 
     function loadProduct(rawProduct) {
       if (state.isAnimating) return;
+
+      flushAllSnapshots();
 
       if (state.mode === "scratch" && state.selectedIndex !== null) {
         deactivateScratch(state.selectedIndex);
@@ -342,14 +753,15 @@
       state.mode = "navigate";
       state.selectedIndex = null;
       state.scratchCards.clear();
+      state.scratchSnapshots.clear();
+      state.residueThumbs.clear();
+      state.scratchCommitRequired = false;
+      releaseScratchCommit();
       backBtn.hidden = true;
       applyTheme();
       engine.loadProduct(state.product);
       primeClaims();
-      requestAnimationFrame(() => {
-        syncScratchSizes();
-        sealOpenedSlots();
-      });
+      void bootstrapVisualState();
     }
 
     return {

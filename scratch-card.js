@@ -1,6 +1,8 @@
 (function () {
   "use strict";
 
+  const MIN_USER_CLEAR_RATIO = 0.012;
+
   const DEFAULT_CONFIG = {
     brushSizeRatio: 0.1,
     layoutSize: 88,
@@ -8,6 +10,7 @@
     foilPreset: "silver",
     foilImage: "",
     onReveal: null,
+    onScratchStart: null,
     getVisualSize: null,
   };
 
@@ -54,6 +57,9 @@
       circle: { cx: 0, cy: 0, r: 0 },
       visualSize: 0,
       checkCounter: 0,
+      sealedSnapshot: null,
+      lastPx: 0,
+      scratchNotified: false,
     };
 
     function getDpr() {
@@ -116,6 +122,35 @@
       });
     }
 
+    function applyDefaultResidue() {
+      updateCircleMetrics();
+      const { cx, cy, r } = state.circle;
+      const brush = Math.max(getBrushRadius(), r * 0.1);
+      const strokes = 16;
+
+      for (let i = 0; i < strokes; i++) {
+        const angle = Math.random() * Math.PI * 2;
+        const dist = Math.random() * r * 0.82;
+        const x = cx + Math.cos(angle) * dist;
+        const y = cy + Math.sin(angle) * dist;
+
+        ctx.globalCompositeOperation = "destination-out";
+        ctx.beginPath();
+        ctx.arc(x, y, brush * (0.7 + Math.random() * 0.8), 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      ctx.globalCompositeOperation = "source-over";
+    }
+
+    function captureSnapshot() {
+      if (!canvas.width || !canvas.height) return null;
+      return {
+        imageData: ctx.getImageData(0, 0, canvas.width, canvas.height),
+        width: canvas.width,
+        height: canvas.height,
+      };
+    }
     function clearCircleFully() {
       const { cx, cy, r } = state.circle;
       ctx.globalCompositeOperation = "destination-out";
@@ -139,6 +174,9 @@
         particleCanvas.style.width = canvas.style.width;
         particleCanvas.style.height = canvas.style.height;
         particleCanvas.style.transform = canvas.style.transform;
+        requestAnimationFrame(() => {
+          fitNumberSize();
+        });
         return;
       }
 
@@ -158,6 +196,9 @@
       fitCanvasBuffer(canvas, visual);
       fitCanvasBuffer(particleCanvas, visual);
       particles.resize(visual, visual);
+      requestAnimationFrame(() => {
+        fitNumberSize();
+      });
 
       if (snapshot) {
         ctx.imageSmoothingEnabled = true;
@@ -168,11 +209,23 @@
         await drawCoating();
         state.coated = true;
         updateCircleMetrics();
-        clearCircleFully();
+        if (state.sealedSnapshot) {
+          await importScratchState(state.sealedSnapshot);
+        } else {
+          applyDefaultResidue();
+          state.sealedSnapshot = captureSnapshot();
+        }
       } else {
+        let preserved = null;
+        if (state.coated && prevW > 0 && prevH > 0 && measureClearedRatio() > 0) {
+          preserved = captureSnapshot();
+        }
         await drawCoating();
         state.coated = true;
         updateCircleMetrics();
+        if (preserved) {
+          await importScratchState(preserved);
+        }
       }
     }
 
@@ -197,13 +250,23 @@
     }
 
     function scratchAt(x, y) {
-      if (!state.enabled || state.sealed || !isInsideCircle(x, y)) return;
+      if (!state.enabled || state.sealed || !isInsideCircle(x, y)) return false;
 
       ctx.globalCompositeOperation = "destination-out";
       ctx.beginPath();
       ctx.arc(x, y, getBrushRadius(), 0, Math.PI * 2);
       ctx.fill();
       ctx.globalCompositeOperation = "source-over";
+      notifyScratchStart();
+      return true;
+    }
+
+    function notifyScratchStart() {
+      if (state.scratchNotified || state.sealed) return;
+      state.scratchNotified = true;
+      if (typeof config.onScratchStart === "function") {
+        config.onScratchStart();
+      }
     }
 
     function emitScratchFeedback(cssX, cssY, cssVx, cssVy, velocity) {
@@ -269,6 +332,14 @@
       }
 
       return total === 0 ? 0 : clear / total;
+    }
+
+    function hasAnyClearing() {
+      return state.coated && measureClearedRatio() >= MIN_USER_CLEAR_RATIO;
+    }
+
+    function hasUserEngaged() {
+      return state.scratchNotified;
     }
 
     async function triggerPrize() {
@@ -389,11 +460,56 @@
       endPress();
     }
 
+    function fitNumberSize() {
+      const text = revealNumber.textContent;
+      if (!text) return;
+
+      const local = getLocalSize();
+      const maxWidth = local * 0.68;
+      let size = Math.floor(local * 0.46);
+      revealNumber.style.fontSize = `${size}px`;
+
+      while (revealNumber.scrollWidth > maxWidth && size > 8) {
+        size -= 1;
+        revealNumber.style.fontSize = `${size}px`;
+      }
+    }
+
     function setNumber(number) {
       revealNumber.textContent = number == null ? "" : String(number);
+      requestAnimationFrame(() => {
+        fitNumberSize();
+      });
     }
 
     async function sealWithResidue(number) {
+      setNumber(number);
+      if (!state.coated) {
+        await resize();
+      }
+      if (measureClearedRatio() <= 0) {
+        applyDefaultResidue();
+      }
+
+      state.sealed = true;
+      state.sealedNumber = number;
+      state.prizeTriggered = true;
+      state.enabled = false;
+      canvas.style.opacity = "1";
+      canvas.style.pointerEvents = "none";
+      state.sealedSnapshot = captureSnapshot();
+    }
+
+    function exportScratchState() {
+      if (!state.coated || !canvas.width) return null;
+      if (state.sealed) {
+        return state.sealedSnapshot || captureSnapshot();
+      }
+      if (measureClearedRatio() < MIN_USER_CLEAR_RATIO) return null;
+      return captureSnapshot();
+    }
+
+    async function importSealedState(snapshot, number) {
       setNumber(number);
       state.sealed = true;
       state.sealedNumber = number;
@@ -403,7 +519,36 @@
       canvas.style.pointerEvents = "none";
 
       if (!state.coated) {
-        await resize();
+        await drawCoating();
+        state.coated = true;
+        updateCircleMetrics();
+      }
+
+      if (snapshot) {
+        await importScratchState(snapshot);
+      } else {
+        applyDefaultResidue();
+      }
+
+      state.sealedSnapshot = captureSnapshot();
+    }
+
+    async function importScratchState(snapshot) {
+      if (!snapshot) return;
+      if (!state.coated) {
+        await drawCoating();
+        state.coated = true;
+        updateCircleMetrics();
+      }
+      if (snapshot.width === canvas.width && snapshot.height === canvas.height) {
+        ctx.putImageData(snapshot.imageData, 0, 0);
+      } else {
+        const tmp = document.createElement("canvas");
+        tmp.width = snapshot.width;
+        tmp.height = snapshot.height;
+        tmp.getContext("2d").putImageData(snapshot.imageData, 0, 0);
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        ctx.drawImage(tmp, 0, 0, canvas.width, canvas.height);
       }
     }
 
@@ -412,14 +557,19 @@
       resize,
       setNumber,
       sealWithResidue,
+      exportScratchState,
+      importScratchState,
+      importSealedState,
       isSealed: () => state.sealed,
       isPrizeTriggered: () => state.prizeTriggered,
-      enable() {
+      hasAnyClearing,
+      hasUserEngaged,
+      async enable() {
         if (state.sealed) return;
         state.enabled = true;
-        resize();
-        requestAnimationFrame(() => {
-          resize();
+        await resize();
+        await new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
         });
       },
       disable: disableScratch,
@@ -438,7 +588,40 @@
     };
   }
 
+  function hasMeaningfulClearing(snapshot) {
+    if (!snapshot || !snapshot.imageData) return false;
+    return (
+      measureClearingFromSnapshot(snapshot.imageData, snapshot.width, snapshot.height) >=
+      MIN_USER_CLEAR_RATIO
+    );
+  }
+
+  function measureClearingFromSnapshot(imageData, width, height) {
+    const cx = width / 2;
+    const cy = height / 2;
+    const r = Math.min(width, height) / 2;
+    const sampleStep = Math.max(2, Math.floor(r / 24));
+    const data = imageData.data;
+    let total = 0;
+    let clear = 0;
+
+    for (let y = cy - r; y <= cy + r; y += sampleStep) {
+      for (let x = cx - r; x <= cx + r; x += sampleStep) {
+        if (Math.hypot(x - cx, y - cy) > r) continue;
+        total += 1;
+        const px = Math.max(0, Math.min(width - 1, Math.floor(x)));
+        const py = Math.max(0, Math.min(height - 1, Math.floor(y)));
+        const alpha = data[(py * width + px) * 4 + 3];
+        if (alpha < 24) clear += 1;
+      }
+    }
+
+    return total === 0 ? 0 : clear / total;
+  }
+
   window.ScratchCard = {
     create: createScratchCard,
+    hasMeaningfulClearing,
+    MIN_USER_CLEAR_RATIO,
   };
 })();

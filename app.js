@@ -23,6 +23,10 @@
       window.Dottery = { product, mapView, boardInfo };
     })
     .catch(() => {
-      window.location.replace("/shop");
+      if (window.PageTransition) {
+        PageTransition.navigate("/shop", "to-shop");
+      } else {
+        window.location.replace("/shop");
+      }
     });
 })();

@@ -20,6 +20,7 @@ const {
   getSettings,
   saveSettings,
   buildDashboard,
+  computeOptimalCols,
 } = require("../helpers");
 const { UPLOADS_DIR } = require("../db");
 
@@ -138,7 +139,7 @@ function createAdminRouter(db, options) {
     const id = createProductId();
     const stamp = nowIso();
     const totalDraws = Math.max(1, Number(body.totalDraws) || 12);
-    const cols = Math.max(1, Number(body.cols) || 4);
+    const cols = computeOptimalCols(totalDraws);
     const theme = THEMES.includes(body.theme) ? body.theme : "light";
     const foilPreset = FOIL_PRESETS.includes(body.foilPreset)
       ? body.foilPreset
@@ -232,7 +233,7 @@ function createAdminRouter(db, options) {
     }
 
     const totalDraws = Math.max(1, Number(body.totalDraws != null ? body.totalDraws : product.total_draws) || 12);
-    const cols = Math.max(1, Number(body.cols != null ? body.cols : product.cols) || 4);
+    const cols = computeOptimalCols(totalDraws);
     const theme = THEMES.includes(body.theme) ? body.theme : product.theme;
     const foilPreset = FOIL_PRESETS.includes(body.foilPreset)
       ? body.foilPreset
@@ -240,7 +241,6 @@ function createAdminRouter(db, options) {
 
     const poolChanged =
       totalDraws !== product.total_draws ||
-      cols !== product.cols ||
       Array.isArray(body.prizes) ||
       body.lastOne !== undefined;
 
@@ -344,7 +344,7 @@ function replacePrizes(db, productId, prizesInput, lastOneInput) {
     .map((p, index) => normalizePrizeInput(p, index));
 
   let lastOne = null;
-  if (lastOneInput && (lastOneInput.name || lastOneInput.grade || lastOneInput.image)) {
+  if (lastOneInput && (lastOneInput.name || lastOneInput.image)) {
     lastOne = normalizePrizeInput(
       {
         ...lastOneInput,
@@ -380,7 +380,7 @@ function replacePrizes(db, productId, prizesInput, lastOneInput) {
       insert.run(
         lastOne.id || createPrizeId(),
         productId,
-        lastOne.grade || "最後賞",
+        lastOne.grade || "",
         lastOne.name,
         lastOne.image,
         1,

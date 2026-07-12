@@ -305,10 +305,9 @@
     }, 1800);
   }
 
-  function prizeLevel(grade) {
-    const value = String(grade || "").toUpperCase();
-    if (value === "A" || value === "LAST" || value === "最後賞" || value.includes("A")) return 2;
-    if (value === "B" || value.includes("B")) return 1;
+  function prizeLevel(prize) {
+    if (!prize) return 0;
+    if (prize.isLastOne) return 2;
     return 0;
   }
 

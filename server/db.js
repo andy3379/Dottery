@@ -114,6 +114,21 @@ function createDb() {
       default_show_remaining INTEGER NOT NULL DEFAULT 1,
       updated_at TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS scratch_snapshots (
+      product_id TEXT NOT NULL,
+      slot_index INTEGER NOT NULL,
+      width INTEGER NOT NULL,
+      height INTEGER NOT NULL,
+      image TEXT NOT NULL,
+      number INTEGER,
+      sealed INTEGER NOT NULL DEFAULT 0,
+      updated_at TEXT NOT NULL,
+      PRIMARY KEY (product_id, slot_index),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scratch_snapshots_product ON scratch_snapshots(product_id);
   `);
 
   const settingsRow = db.prepare(`SELECT id FROM settings WHERE id = 1`).get();
