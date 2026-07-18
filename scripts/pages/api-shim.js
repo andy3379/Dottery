@@ -3,7 +3,7 @@
 
   var DB_KEY = "dottery-pages-db";
   var AUTH_KEY = "dottery-pages-admin";
-  var ADMIN_PASSWORD = "dottery";
+  var ADMIN_PASSWORD = "0000";
   var THEMES = ["light", "warm", "cool", "dark", "rose"];
   var FOIL_PRESETS = ["silver", "gold", "color"];
   var LAYOUT = { slotSize: 88, gap: 24, zoomTargetSize: 300, zoomPadding: 0.88 };

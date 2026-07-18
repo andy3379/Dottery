@@ -10,7 +10,7 @@ npm start
 - 前台：http://localhost:3000 （商品列表）
 - 刮板：http://localhost:3000/board?product=<id>
 - 後台：http://localhost:3000/admin
-- 預設密碼：`dottery`（可用環境變數 `ADMIN_PASSWORD` 覆寫）
+- 預設密碼：`0000`（可用環境變數 `ADMIN_PASSWORD` 覆寫）
 
 ## GitHub Pages
 
