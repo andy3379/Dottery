@@ -88,6 +88,7 @@ write(
         '<script src="/admin/economics.js"></script>',
         '<script src="../api-shim.js"></script>\n  <script src="economics.js"></script>',
       ],
+      ['<script src="/admin/prize-number-spec.js"></script>', '<script src="prize-number-spec.js"></script>'],
       ['<script src="/admin/admin.js"></script>', '<script src="admin.js"></script>'],
     ],
     "admin/index.html"
@@ -197,5 +198,6 @@ write(
 
 copy("admin/admin.css");
 copy("admin/economics.js");
+copy("admin/prize-number-spec.js");
 
 process.stdout.write("docs/ 建置完成\n");
