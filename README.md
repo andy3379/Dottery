@@ -12,6 +12,15 @@ npm start
 - 後台：http://localhost:3000/admin
 - 預設密碼：`dottery`（可用環境變數 `ADMIN_PASSWORD` 覆寫）
 
+## GitHub Pages
+
+```bash
+npm run build:pages
+```
+
+- 產出 `docs/` 靜態版，push 到 `main` 後由 GitHub Actions 自動部署
+- 靜態版以 `localStorage` 取代伺服器資料庫，資料只存在瀏覽器本機
+
 ## 架構
 
 ```
