@@ -112,6 +112,7 @@ function createDb() {
       show_progress INTEGER NOT NULL DEFAULT 1,
       hide_soldout INTEGER NOT NULL DEFAULT 0,
       default_show_remaining INTEGER NOT NULL DEFAULT 1,
+      admin_pin TEXT NOT NULL DEFAULT '0000',
       updated_at TEXT NOT NULL
     );
 
@@ -129,14 +130,56 @@ function createDb() {
     );
 
     CREATE INDEX IF NOT EXISTS idx_scratch_snapshots_product ON scratch_snapshots(product_id);
+
+    CREATE TABLE IF NOT EXISTS slot_drafts (
+      product_id TEXT NOT NULL,
+      slot_index INTEGER NOT NULL,
+      number INTEGER NOT NULL,
+      prize_id TEXT NOT NULL,
+      PRIMARY KEY (product_id, slot_index),
+      FOREIGN KEY (product_id) REFERENCES products(id) ON DELETE CASCADE
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_slot_drafts_product ON slot_drafts(product_id);
   `);
+
+  const productColumns = db.prepare(`PRAGMA table_info(products)`).all();
+  const productColNames = productColumns.map((col) => col.name);
+  if (!productColNames.includes("schedule_enabled")) {
+    db.exec(`ALTER TABLE products ADD COLUMN schedule_enabled INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!productColNames.includes("schedule_start")) {
+    db.exec(`ALTER TABLE products ADD COLUMN schedule_start TEXT`);
+  }
+  if (!productColNames.includes("schedule_end")) {
+    db.exec(`ALTER TABLE products ADD COLUMN schedule_end TEXT`);
+  }
+  if (!productColNames.includes("draw_mode")) {
+    db.exec(`ALTER TABLE products ADD COLUMN draw_mode TEXT NOT NULL DEFAULT 'shuffle'`);
+  }
+  if (!productColNames.includes("sort_order")) {
+    db.exec(`ALTER TABLE products ADD COLUMN sort_order INTEGER NOT NULL DEFAULT 0`);
+  }
+  if (!productColNames.includes("soldout_visibility")) {
+    db.exec(
+      `ALTER TABLE products ADD COLUMN soldout_visibility TEXT NOT NULL DEFAULT 'show_soldout'`
+    );
+  }
+
+  const settingsColumns = db.prepare(`PRAGMA table_info(settings)`).all();
+  if (!settingsColumns.some((col) => col.name === "admin_pin")) {
+    db.exec(`ALTER TABLE settings ADD COLUMN admin_pin TEXT NOT NULL DEFAULT '0000'`);
+  }
+
+  const envPin = String(process.env.ADMIN_PASSWORD || "");
+  const seedPin = /^\d{4}$/.test(envPin) ? envPin : "0000";
 
   const settingsRow = db.prepare(`SELECT id FROM settings WHERE id = 1`).get();
   if (!settingsRow) {
     db.prepare(
-      `INSERT INTO settings (id, shop_title, show_price, show_progress, hide_soldout, default_show_remaining, updated_at)
-       VALUES (1, 'Dottery', 1, 1, 0, 1, ?)`
-    ).run(new Date().toISOString());
+      `INSERT INTO settings (id, shop_title, show_price, show_progress, hide_soldout, default_show_remaining, admin_pin, updated_at)
+       VALUES (1, 'Dottery', 1, 1, 0, 1, ?, ?)`
+    ).run(seedPin, new Date().toISOString());
   }
 
   const prizeColumns = db.prepare(`PRAGMA table_info(prizes)`).all();

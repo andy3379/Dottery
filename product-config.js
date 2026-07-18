@@ -204,7 +204,12 @@
   }
 
   async function fetchProduct(productId) {
-    const response = await fetch(`/api/products/${productId}`);
+    const params = new URLSearchParams(window.location.search);
+    const preview = params.get("preview") === "1";
+    const url = preview
+      ? `/api/products/${encodeURIComponent(productId)}?preview=1`
+      : `/api/products/${encodeURIComponent(productId)}`;
+    const response = await fetch(url);
     if (!response.ok) {
       throw new Error(`product ${productId} not found`);
     }

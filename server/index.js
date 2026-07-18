@@ -5,11 +5,11 @@ const express = require("express");
 const cookieParser = require("cookie-parser");
 const { nanoid } = require("nanoid");
 const { createDb, ROOT, UPLOADS_DIR } = require("./db");
+const { getAdminPin } = require("./helpers");
 const { createAdminRouter } = require("./routes/admin");
 const { createPublicRouter } = require("./routes/public");
 
 const PORT = Number(process.env.PORT) || 3000;
-const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "dottery";
 
 const db = createDb();
 const app = express();
@@ -83,7 +83,7 @@ app.use(sessionMiddleware);
 
 app.use("/uploads", express.static(UPLOADS_DIR));
 app.use("/api", createPublicRouter(db));
-app.use("/api/admin", createAdminRouter(db, { adminPassword: ADMIN_PASSWORD }));
+app.use("/api/admin", createAdminRouter(db));
 
 app.use("/admin", express.static(path.join(ROOT, "admin")));
 app.get(["/admin", "/admin/"], (_req, res) => {
@@ -110,5 +110,5 @@ PUBLIC_FILES.forEach((file) => {
 
 app.listen(PORT, () => {
   process.stdout.write(`Dottery http://localhost:${PORT}\n`);
-  process.stdout.write(`Admin  http://localhost:${PORT}/admin  password=${ADMIN_PASSWORD}\n`);
+  process.stdout.write(`Admin  http://localhost:${PORT}/admin  pin=${getAdminPin(db)}\n`);
 });

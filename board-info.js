@@ -33,13 +33,29 @@
       boardProgress.classList.toggle("is-done", total > 0 && scratched >= total);
     }
 
-    function formatPrizeNumbers(numbers) {
-      if (!numbers || !numbers.length) return "";
-      const sorted = [...numbers].sort((a, b) => a - b);
-      if (sorted.length <= 6) {
-        return sorted.map(String).join("、");
+    function prizeNumberRanges(numbers) {
+      if (!numbers || !numbers.length) return [];
+      const sorted = [...new Set(numbers.map(Number))].filter((n) => Number.isFinite(n)).sort((a, b) => a - b);
+      if (!sorted.length) return [];
+      const ranges = [];
+      let start = sorted[0];
+      let prev = sorted[0];
+      for (let i = 1; i < sorted.length; i++) {
+        const n = sorted[i];
+        if (n === prev + 1) {
+          prev = n;
+          continue;
+        }
+        ranges.push(start === prev ? { start } : { start, end: prev });
+        start = n;
+        prev = n;
       }
-      return `${sorted[0]}~${sorted[sorted.length - 1]}`;
+      ranges.push(start === prev ? { start } : { start, end: prev });
+      return ranges;
+    }
+
+    function formatRangeLabel(range) {
+      return range.end == null ? String(range.start) : `${range.start}–${range.end}`;
     }
 
     function numbersForPrize(prizeId) {
@@ -63,6 +79,7 @@
         const ratio = remainingDraws > 0 ? left / remainingDraws : 0;
         const fallback = prizeMap[item.id];
         rows.push({
+          grade: item.grade || fallback?.grade || "",
           name: item.name || fallback?.name || "",
           image: item.image || fallback?.image || "",
           numbers: item.numbers?.length ? item.numbers : numbersForPrize(item.id),
@@ -76,6 +93,7 @@
       if (product.lastOne) {
         const left = remainingDraws > 0 ? 1 : 0;
         rows.push({
+          grade: product.lastOne.grade || "",
           name: product.lastOne.name || "",
           image: product.lastOne.image || "",
           numbers: [],
@@ -144,7 +162,8 @@
 
         const name = document.createElement("span");
         name.className = "board-prize__name";
-        name.textContent = row.name || "";
+        const label = row.grade ? `${row.grade} ${row.name || ""}`.trim() : row.name || "";
+        name.textContent = label;
         top.appendChild(name);
 
         const prob = document.createElement("span");
@@ -154,11 +173,24 @@
 
         body.appendChild(top);
 
-        const numbersText = formatPrizeNumbers(row.numbers);
-        if (numbersText) {
+        const ranges = prizeNumberRanges(row.numbers);
+        if (ranges.length) {
           const numbers = document.createElement("div");
           numbers.className = "board-prize__numbers";
-          numbers.textContent = numbersText;
+          const maxChips = 8;
+          const visible = ranges.length > maxChips ? ranges.slice(0, maxChips - 1) : ranges;
+          visible.forEach((range) => {
+            const chip = document.createElement("span");
+            chip.className = "board-prize__num";
+            chip.textContent = formatRangeLabel(range);
+            numbers.appendChild(chip);
+          });
+          if (ranges.length > maxChips) {
+            const more = document.createElement("span");
+            more.className = "board-prize__num board-prize__num--more";
+            more.textContent = `+${ranges.length - visible.length}`;
+            numbers.appendChild(more);
+          }
           body.appendChild(numbers);
         }
 
@@ -199,8 +231,13 @@
       const prize = result.prize || {};
       const level = ScratchEffects.prizeLevel(prize);
       revealNumber.textContent = String(result.number);
-      revealGrade.hidden = true;
-      revealGrade.textContent = "";
+      if (prize.grade) {
+        revealGrade.hidden = false;
+        revealGrade.textContent = prize.grade;
+      } else {
+        revealGrade.hidden = true;
+        revealGrade.textContent = "";
+      }
       revealName.textContent = prize.name || "";
 
       if (prize.image) {
@@ -218,8 +255,13 @@
       if (result.lastOneAwarded) {
         setTimeout(() => {
           revealNumber.textContent = "";
-          revealGrade.hidden = true;
-          revealGrade.textContent = "";
+          if (result.lastOneAwarded.grade) {
+            revealGrade.hidden = false;
+            revealGrade.textContent = result.lastOneAwarded.grade;
+          } else {
+            revealGrade.hidden = true;
+            revealGrade.textContent = "";
+          }
           revealName.textContent = result.lastOneAwarded.name || "";
           if (result.lastOneAwarded.image) {
             revealImage.hidden = false;

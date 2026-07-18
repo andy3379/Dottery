@@ -7,6 +7,8 @@ const { nanoid } = require("nanoid");
 const {
   THEMES,
   FOIL_PRESETS,
+  DRAW_MODES,
+  SOLDOUT_VISIBILITY,
   nowIso,
   rowToProduct,
   getPrizes,
@@ -19,14 +21,17 @@ const {
   resetBoard,
   getSettings,
   saveSettings,
+  getAdminPin,
   buildDashboard,
   computeOptimalCols,
+  saveSlotDrafts,
+  validateManualSlots,
+  buildSlotDraftsFromPrizeSpecs,
 } = require("../helpers");
 const { UPLOADS_DIR } = require("../db");
 
-function createAdminRouter(db, options) {
+function createAdminRouter(db) {
   const router = express.Router();
-  const adminPassword = options.adminPassword;
 
   const storage = multer.diskStorage({
     destination: (_req, _file, cb) => cb(null, UPLOADS_DIR),
@@ -58,7 +63,7 @@ function createAdminRouter(db, options) {
 
   router.post("/login", (req, res) => {
     const password = String((req.body && req.body.password) || "");
-    if (password !== adminPassword) {
+    if (!/^\d{4}$/.test(password) || password !== getAdminPin(db)) {
       res.status(401).json({ error: "密碼錯誤" });
       return;
     }
@@ -89,7 +94,11 @@ function createAdminRouter(db, options) {
 
   router.put("/settings", (req, res) => {
     const body = req.body || {};
-    res.json(saveSettings(db, body));
+    try {
+      res.json(saveSettings(db, body));
+    } catch (err) {
+      res.status(err.status || 400).json({ error: err.message || "儲存失敗" });
+    }
   });
 
   router.post("/upload", upload.single("file"), (req, res) => {
@@ -102,7 +111,7 @@ function createAdminRouter(db, options) {
 
   router.get("/products", (_req, res) => {
     const rows = db
-      .prepare(`SELECT * FROM products ORDER BY updated_at DESC`)
+      .prepare(`SELECT * FROM products ORDER BY sort_order ASC, updated_at DESC`)
       .all();
 
     const products = rows.map((row) => {
@@ -126,6 +135,7 @@ function createAdminRouter(db, options) {
     const detail = buildProductDetail(db, req.params.id, {
       includeSlots: true,
       revealAll: true,
+      includeSlotDrafts: true,
     });
     if (!detail) {
       res.status(404).json({ error: "找不到商品" });
@@ -144,13 +154,21 @@ function createAdminRouter(db, options) {
     const foilPreset = FOIL_PRESETS.includes(body.foilPreset)
       ? body.foilPreset
       : "silver";
+    const schedule = parseScheduleFields(body, null);
+    const drawMode = DRAW_MODES.includes(body.drawMode) ? body.drawMode : "shuffle";
+    const sortOrder = Number(body.sortOrder) || 0;
+    const soldoutVisibility = SOLDOUT_VISIBILITY.includes(body.soldoutVisibility)
+      ? body.soldoutVisibility
+      : "show_soldout";
 
     db.prepare(
       `INSERT INTO products (
         id, name, description, cover_image, price, category,
         total_draws, cols, status, theme, foil_preset, foil_image,
-        show_remaining, published_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, NULL, ?, ?)`
+        show_remaining, schedule_enabled, schedule_start, schedule_end,
+        draw_mode, sort_order, soldout_visibility,
+        published_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
     ).run(
       id,
       String(body.name || "").trim(),
@@ -164,6 +182,12 @@ function createAdminRouter(db, options) {
       foilPreset,
       String(body.foilImage || "").trim(),
       body.showRemaining === false ? 0 : 1,
+      schedule.scheduleEnabled ? 1 : 0,
+      schedule.scheduleStart,
+      schedule.scheduleEnd,
+      drawMode,
+      sortOrder,
+      soldoutVisibility,
       stamp,
       stamp
     );
@@ -172,7 +196,9 @@ function createAdminRouter(db, options) {
       replacePrizes(db, id, body.prizes, body.lastOne || null);
     }
 
-    res.status(201).json(buildProductDetail(db, id, { includeSlots: true, revealAll: true }));
+    applyPrizeNumberSpecsIfValid(db, id, body, drawMode, totalDraws);
+
+    res.status(201).json(buildProductDetail(db, id, { includeSlots: true, revealAll: true, includeSlotDrafts: true }));
   });
 
   router.put("/products/:id", (req, res) => {
@@ -190,11 +216,19 @@ function createAdminRouter(db, options) {
       const foilPreset = FOIL_PRESETS.includes(body.foilPreset)
         ? body.foilPreset
         : product.foil_preset;
+      const schedule = parseScheduleFields(body, product);
+      const soldoutVisibility = SOLDOUT_VISIBILITY.includes(body.soldoutVisibility)
+        ? body.soldoutVisibility
+        : product.soldout_visibility;
+      const sortOrder =
+        body.sortOrder != null ? Number(body.sortOrder) || 0 : product.sort_order;
 
       db.prepare(
         `UPDATE products SET
           name = ?, description = ?, cover_image = ?, price = ?, category = ?,
-          theme = ?, foil_preset = ?, foil_image = ?, show_remaining = ?, updated_at = ?
+          theme = ?, foil_preset = ?, foil_image = ?, show_remaining = ?,
+          schedule_enabled = ?, schedule_start = ?, schedule_end = ?,
+          sort_order = ?, soldout_visibility = ?, updated_at = ?
          WHERE id = ?`
       ).run(
         String(body.name != null ? body.name : product.name).trim(),
@@ -206,6 +240,11 @@ function createAdminRouter(db, options) {
         foilPreset,
         String(body.foilImage != null ? body.foilImage : product.foil_image).trim(),
         body.showRemaining === false ? 0 : body.showRemaining === true ? 1 : product.show_remaining,
+        schedule.scheduleEnabled ? 1 : 0,
+        schedule.scheduleStart,
+        schedule.scheduleEnd,
+        sortOrder,
+        soldoutVisibility,
         nowIso(),
         product.id
       );
@@ -228,7 +267,7 @@ function createAdminRouter(db, options) {
         );
       }
 
-      res.json(buildProductDetail(db, product.id, { includeSlots: true, revealAll: true }));
+      res.json(buildProductDetail(db, product.id, { includeSlots: true, revealAll: true, includeSlotDrafts: true }));
       return;
     }
 
@@ -238,17 +277,25 @@ function createAdminRouter(db, options) {
     const foilPreset = FOIL_PRESETS.includes(body.foilPreset)
       ? body.foilPreset
       : product.foil_preset;
+    const schedule = parseScheduleFields(body, product);
+    const drawMode = DRAW_MODES.includes(body.drawMode) ? body.drawMode : product.draw_mode;
+    const sortOrder =
+      body.sortOrder != null ? Number(body.sortOrder) || 0 : product.sort_order;
+    const soldoutVisibility = SOLDOUT_VISIBILITY.includes(body.soldoutVisibility)
+      ? body.soldoutVisibility
+      : product.soldout_visibility;
 
-    const poolChanged =
-      totalDraws !== product.total_draws ||
-      Array.isArray(body.prizes) ||
-      body.lastOne !== undefined;
+    const prizePoolChanged = Array.isArray(body.prizes) || body.lastOne !== undefined;
+    const drawModeChanged = drawMode !== product.draw_mode;
+    const totalDrawsChanged = totalDraws !== product.total_draws;
+    const poolChanged = totalDrawsChanged || prizePoolChanged || drawModeChanged;
 
     db.prepare(
       `UPDATE products SET
         name = ?, description = ?, cover_image = ?, price = ?, category = ?,
         total_draws = ?, cols = ?, theme = ?, foil_preset = ?, foil_image = ?,
-        show_remaining = ?, updated_at = ?
+        show_remaining = ?, schedule_enabled = ?, schedule_start = ?, schedule_end = ?,
+        draw_mode = ?, sort_order = ?, soldout_visibility = ?, updated_at = ?
        WHERE id = ?`
     ).run(
       String(body.name != null ? body.name : product.name).trim(),
@@ -262,24 +309,92 @@ function createAdminRouter(db, options) {
       foilPreset,
       String(body.foilImage != null ? body.foilImage : product.foil_image).trim(),
       body.showRemaining === false ? 0 : body.showRemaining === true ? 1 : product.show_remaining,
+      schedule.scheduleEnabled ? 1 : 0,
+      schedule.scheduleStart,
+      schedule.scheduleEnd,
+      drawMode,
+      sortOrder,
+      soldoutVisibility,
       nowIso(),
       product.id
     );
 
-    if (Array.isArray(body.prizes) || body.lastOne !== undefined) {
+    if (poolChanged) {
+      db.prepare(`DELETE FROM slots WHERE product_id = ?`).run(product.id);
+    }
+
+    if (totalDrawsChanged || drawModeChanged) {
+      db.prepare(`DELETE FROM slot_drafts WHERE product_id = ?`).run(product.id);
+    }
+
+    if (prizePoolChanged) {
       replacePrizes(
         db,
         product.id,
         body.prizes || getPrizes(db, product.id).filter((p) => !p.isLastOne),
         body.lastOne
       );
+      db.prepare(`DELETE FROM slot_drafts WHERE product_id = ?`).run(product.id);
     }
 
-    if (poolChanged) {
-      db.prepare(`DELETE FROM slots WHERE product_id = ?`).run(product.id);
+    if (!applyPrizeNumberSpecsIfValid(db, product.id, body, drawMode, totalDraws)) {
+      if (Array.isArray(body.slotDrafts) && !prizePoolChanged && !totalDrawsChanged && !drawModeChanged) {
+        const prizeRows = getPrizes(db, product.id);
+        const manualError = validateManualSlots(body.slotDrafts, prizeRows, totalDraws);
+        if (!manualError) {
+          saveSlotDrafts(db, product.id, body.slotDrafts, totalDraws);
+        }
+      }
     }
 
-    res.json(buildProductDetail(db, product.id, { includeSlots: true, revealAll: true }));
+    res.json(buildProductDetail(db, product.id, { includeSlots: true, revealAll: true, includeSlotDrafts: true }));
+  });
+
+  router.put("/products/:id/slot-drafts", (req, res) => {
+    const product = db.prepare(`SELECT * FROM products WHERE id = ?`).get(req.params.id);
+    if (!product) {
+      res.status(404).json({ error: "找不到商品" });
+      return;
+    }
+    if (product.status === "published") {
+      res.status(400).json({ error: "上架中無法修改盤面" });
+      return;
+    }
+
+    const body = req.body || {};
+    const totalDraws = product.total_draws;
+
+    if (body.specs && typeof body.specs === "object") {
+      const prizeRows = getPrizes(db, product.id);
+      const built = buildSlotDraftsFromPrizeSpecs(prizeRows, body.specs, totalDraws);
+      if (built.error) {
+        res.status(400).json({ error: built.error });
+        return;
+      }
+      const draftResult = saveSlotDrafts(db, product.id, built.drafts, totalDraws);
+      if (draftResult.error) {
+        res.status(draftResult.status).json({ error: draftResult.error });
+        return;
+      }
+      res.json({ slotDrafts: draftResult.drafts });
+      return;
+    }
+
+    if (Array.isArray(body.slots)) {
+      const prizeRows = getPrizes(db, product.id);
+      const manualError = validateManualSlots(body.slots, prizeRows, totalDraws);
+      if (manualError) {
+        res.status(400).json({ error: manualError });
+        return;
+      }
+    }
+
+    const draftResult = saveSlotDrafts(db, product.id, body.slots || [], totalDraws);
+    if (draftResult.error) {
+      res.status(draftResult.status).json({ error: draftResult.error });
+      return;
+    }
+    res.json({ slotDrafts: draftResult.drafts });
   });
 
   router.delete("/products/:id", (req, res) => {
@@ -294,6 +409,7 @@ function createAdminRouter(db, options) {
     }
 
     db.prepare(`DELETE FROM slots WHERE product_id = ?`).run(product.id);
+    db.prepare(`DELETE FROM slot_drafts WHERE product_id = ?`).run(product.id);
     db.prepare(`DELETE FROM prizes WHERE product_id = ?`).run(product.id);
     db.prepare(`DELETE FROM products WHERE id = ?`).run(product.id);
     res.json({ ok: true });
@@ -338,6 +454,39 @@ function createAdminRouter(db, options) {
   return router;
 }
 
+function applyPrizeNumberSpecsIfValid(db, productId, body, drawMode, totalDraws) {
+  if (drawMode !== "manual" || !body.prizeNumberSpecs || typeof body.prizeNumberSpecs !== "object") {
+    return false;
+  }
+  const prizeRows = getPrizes(db, productId);
+  const built = buildSlotDraftsFromPrizeSpecs(prizeRows, body.prizeNumberSpecs, totalDraws);
+  if (built.error) {
+    return false;
+  }
+  saveSlotDrafts(db, productId, built.drafts, totalDraws);
+  return true;
+}
+
+function parseScheduleFields(body, current) {
+  const scheduleEnabled =
+    body.scheduleEnabled != null
+      ? Boolean(body.scheduleEnabled)
+      : Boolean(current && current.schedule_enabled);
+  const scheduleStart =
+    body.scheduleStart !== undefined
+      ? body.scheduleStart || null
+      : current
+        ? current.schedule_start || null
+        : null;
+  const scheduleEnd =
+    body.scheduleEnd !== undefined
+      ? body.scheduleEnd || null
+      : current
+        ? current.schedule_end || null
+        : null;
+  return { scheduleEnabled, scheduleStart, scheduleEnd };
+}
+
 function replacePrizes(db, productId, prizesInput, lastOneInput) {
   const prizes = (prizesInput || [])
     .filter((p) => !p.isLastOne)
@@ -373,7 +522,7 @@ function replacePrizes(db, productId, prizesInput, lastOneInput) {
         prize.quantity,
         prize.cost,
         0,
-        index
+        Number.isFinite(prize.sortOrder) ? prize.sortOrder : index
       );
     });
     if (lastOne) {

@@ -187,6 +187,10 @@ body {
   z-index: 100;
 }
 
+html.is-preview .home-link--float {
+  display: none;
+}
+
 .board-progress {
   position: fixed;
   top: 1.1rem;
@@ -366,28 +370,50 @@ body.has-board-prize .viewport {
 }
 
 .board-prize__numbers {
-  font-size: 0.72rem;
-  font-weight: 500;
-  color: var(--shop-ink-soft);
-  letter-spacing: -0.01em;
-  font-variant-numeric: tabular-nums;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
   margin-bottom: 0.55rem;
+}
+
+.board-prize__num {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  max-width: 100%;
+  padding: 0.28rem 0.55rem;
+  border-radius: 10px;
+  background: rgba(47, 95, 224, 0.1);
+  color: var(--shop-accent);
+  font-size: 0.78rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+  font-variant-numeric: tabular-nums;
+  line-height: 1.2;
+  word-break: break-all;
+}
+
+.board-prize__num--more {
+  background: rgba(21, 21, 26, 0.06);
+  color: var(--shop-ink-soft);
 }
 
 .board-prize__frac-row {
   display: flex;
-  align-items: center;
-  gap: 0.55rem;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0.4rem;
 }
 
 .board-prize__frac {
+  align-self: flex-start;
   flex-shrink: 0;
-  font-size: 0.68rem;
-  font-weight: 600;
+  font-size: 0.8rem;
+  font-weight: 700;
   letter-spacing: -0.01em;
-  color: var(--shop-ink-soft);
+  color: var(--shop-ink);
   font-variant-numeric: tabular-nums;
-  padding: 0.22rem 0.5rem;
+  padding: 0.26rem 0.55rem;
   border-radius: 999px;
   background: rgba(255, 255, 255, 0.42);
   backdrop-filter: blur(10px);
@@ -395,8 +421,8 @@ body.has-board-prize .viewport {
 }
 
 .board-prize__track {
-  flex: 1;
-  height: 6px;
+  width: 100%;
+  height: 8px;
   border-radius: 999px;
   background: rgba(21, 21, 26, 0.06);
   box-shadow: 0 1px 3px rgba(21, 21, 26, 0.07) inset;
@@ -428,6 +454,13 @@ body.has-board-prize:has(.viewport.is-scratch) .viewport,
 body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
   width: 100%;
   margin-left: 0;
+}
+
+@media (min-width: 721px) {
+  .board-prize__media {
+    width: min(100%, 9.5rem);
+    margin-inline: auto;
+  }
 }
 
 @media (max-width: 720px) {
@@ -465,8 +498,14 @@ body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
     font-size: 0.82rem;
   }
 
+  .board-prize__num {
+    font-size: 0.7rem;
+    padding: 0.24rem 0.45rem;
+    border-radius: 8px;
+  }
+
   .board-prize__numbers {
-    font-size: 0.66rem;
+    gap: 0.28rem;
     margin-bottom: 0.45rem;
   }
 

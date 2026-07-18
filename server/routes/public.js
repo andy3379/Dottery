@@ -10,6 +10,10 @@ const {
   getScratchSnapshots,
   saveScratchSnapshot,
   getSettings,
+  getScheduleStatus,
+  isProductPlayable,
+  isProductVisibleInShop,
+  syncScheduledProducts,
 } = require("../helpers");
 
 function createPublicRouter(db) {
@@ -20,38 +24,64 @@ function createPublicRouter(db) {
   });
 
   router.get("/products", (_req, res) => {
+    syncScheduledProducts(db);
+    const settings = getSettings(db);
     const rows = db
-      .prepare(`SELECT * FROM products WHERE status = 'published' ORDER BY published_at DESC`)
+      .prepare(
+        `SELECT * FROM products WHERE status = 'published' ORDER BY sort_order ASC, published_at DESC`
+      )
       .all();
 
-    const products = rows.map((row) => {
-      const product = rowToProduct(row);
-      const scratchedCount = getScratchedCount(db, row.id);
-      return {
-        id: product.id,
-        name: product.name,
-        description: product.description,
-        coverImage: product.coverImage,
-        price: product.price,
-        category: product.category,
-        totalDraws: product.totalDraws,
-        scratchedCount,
-        remainingDraws: Math.max(0, product.totalDraws - scratchedCount),
-        theme: product.theme,
-      };
-    });
+    const products = rows
+      .filter((row) => isProductVisibleInShop(db, row, settings))
+      .map((row) => {
+        const product = rowToProduct(row);
+        const scratchedCount = getScratchedCount(db, row.id);
+        const scheduleStatus = getScheduleStatus(product);
+        return {
+          id: product.id,
+          name: product.name,
+          description: product.description,
+          coverImage: product.coverImage,
+          price: product.price,
+          category: product.category,
+          totalDraws: product.totalDraws,
+          scratchedCount,
+          remainingDraws: Math.max(0, product.totalDraws - scratchedCount),
+          theme: product.theme,
+          scheduleStatus,
+          playable: scheduleStatus === "none" || scheduleStatus === "active",
+        };
+      });
 
     res.json({ products });
   });
 
   router.get("/products/:id", (req, res) => {
+    syncScheduledProducts(db);
+    const preview = req.query.preview === "1" && Boolean(req.session && req.session.admin);
     const row = db.prepare(`SELECT * FROM products WHERE id = ?`).get(req.params.id);
-    if (!row || row.status !== "published") {
+    if (!row) {
+      res.status(404).json({ error: "找不到商品" });
+      return;
+    }
+    if (!preview && row.status !== "published") {
       res.status(404).json({ error: "找不到商品" });
       return;
     }
 
+    if (!preview) {
+      const playable = isProductPlayable(row);
+      if (!playable.ok) {
+        res.status(403).json({ error: playable.reason });
+        return;
+      }
+    }
+
     const detail = buildProductDetail(db, req.params.id, { includeSlots: true });
+    if (preview) {
+      detail.preview = true;
+    }
     res.json(detail);
   });
 

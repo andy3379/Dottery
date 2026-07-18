@@ -20,6 +20,7 @@
     products: [],
     query: "",
     heroIndex: 0,
+    heroStep: 0,
     heroReady: false,
     metaProductId: null,
   };
@@ -222,6 +223,28 @@
     });
   }
 
+  function heroRange(count) {
+    if (count <= 1) return 0;
+    if (count <= 4) return 1;
+    return 2;
+  }
+
+  function heroOffsetOrder(range) {
+    const offsets = [0];
+    for (let step = 1; step <= range; step++) {
+      offsets.push(-step, step);
+    }
+    return offsets;
+  }
+
+  function moveHero(step) {
+    const count = heroList().length;
+    if (!count || !step) return;
+    state.heroStep = step;
+    state.heroIndex = ((state.heroIndex + step) % count + count) % count;
+    renderHeroStage();
+  }
+
   function heroCardTransform(offset, count) {
     const clamped = Math.max(-2, Math.min(2, offset));
     const abs = Math.abs(clamped);
@@ -302,17 +325,25 @@
     price.textContent = formatPrice(product.price);
   }
 
+  function isPlayable(product) {
+    return product.playable !== false;
+  }
+
   function bindHeroCardClick(card, product, offset, count) {
     card.onpointerup = null;
     card.onclick = null;
+    card.classList.toggle("hero-card--locked", offset === 0 && !isPlayable(product));
     let link = card.querySelector(".hero-card__link");
     if (offset !== 0) {
       if (link) link.remove();
       const targetOffset = offset;
       card.onclick = () => {
-        state.heroIndex = ((state.heroIndex + targetOffset) % count + count) % count;
-        renderHeroStage();
+        moveHero(targetOffset);
       };
+      return;
+    }
+    if (!isPlayable(product)) {
+      if (link) link.remove();
       return;
     }
     if (!link) {
@@ -326,16 +357,40 @@
     }
   }
 
+  function heroClipTransform(isCenter) {
+    const scale = isCenter ? 1 : 1.03;
+    return `translateZ(0) scale(${scale})`;
+  }
+
   function applyHeroCardLayout(card, product, offset, count, animate) {
     const t = heroCardTransform(offset, count);
     const isCenter = offset === 0;
+    const hadCenter = card.classList.contains("hero-card--center");
+    const hadSide = card.classList.contains("hero-card--side");
+    const roleChanged =
+      (isCenter && hadSide) || (!isCenter && hadCenter);
+    const clip = card.querySelector(":scope > .hero-card__clip");
 
     if (!animate) {
       card.style.transition = "none";
+      if (clip) clip.style.transition = "none";
+    } else if (roleChanged && clip) {
+      clip.style.transition = "none";
+      clip.style.transform = heroClipTransform(hadCenter);
     }
 
     card.classList.toggle("hero-card--center", isCenter);
     card.classList.toggle("hero-card--side", !isCenter);
+
+    if (animate) {
+      void card.offsetWidth;
+      card.style.transition = "";
+      if (clip && roleChanged) {
+        clip.style.transition = "";
+        clip.style.transform = "";
+      }
+    }
+
     card.style.transform = t.transform;
     card.style.opacity = String(t.opacity);
     card.style.zIndex = String(t.zIndex);
@@ -348,7 +403,13 @@
     if (!animate) {
       void card.offsetWidth;
       card.style.transition = "";
+      if (clip) {
+        clip.style.transition = "";
+        clip.style.transform = "";
+      }
     }
+
+    card.dataset.heroOffset = String(offset);
   }
 
   function createHeroCard(product) {
@@ -408,13 +469,17 @@
     if (state.heroIndex < 0) state.heroIndex = list.length - 1;
 
     const count = list.length;
-    const range = Math.min(2, Math.floor((count - 1) / 2) + (count > 1 ? 1 : 0));
+    const range = heroRange(count);
     const visibleIds = new Set();
+    const placedIds = new Set();
+    const step = options.instant ? 0 : state.heroStep;
 
-    for (let offset = -range; offset <= range; offset++) {
+    for (const offset of heroOffsetOrder(range)) {
       const index = ((state.heroIndex + offset) % count + count) % count;
       if (count > 4 && Math.abs(offset) > 2) continue;
       const product = list[index];
+      if (placedIds.has(product.id)) continue;
+      placedIds.add(product.id);
       visibleIds.add(product.id);
 
       let card = heroCardPool.get(product.id);
@@ -423,13 +488,16 @@
         card = createHeroCard(product);
         heroCardPool.set(product.id, card);
         if (animate) {
-          const enterFrom = heroCardTransform(offset + Math.sign(offset || 1) * 0.35, count);
+          const enterBias = step !== 0 ? step * 0.35 : Math.sign(offset || 1) * 0.35;
+          const enterFrom = heroCardTransform(offset + enterBias, count);
           card.style.transition = "none";
           card.style.transform = enterFrom.transform;
           card.style.opacity = "0";
         }
         track.appendChild(card);
         if (animate) {
+          void card.offsetWidth;
+          card.style.transition = "";
           requestAnimationFrame(() => {
             applyHeroCardLayout(card, product, offset, count, true);
           });
@@ -456,6 +524,7 @@
     renderHeroMeta(list[state.heroIndex]);
     renderHeroDots(list);
     state.heroReady = true;
+    state.heroStep = 0;
   }
 
   function renderHero() {
@@ -463,17 +532,11 @@
   }
 
   els.heroPrev.addEventListener("click", () => {
-    const count = heroList().length;
-    if (!count) return;
-    state.heroIndex = ((state.heroIndex - 1) % count + count) % count;
-    renderHeroStage();
+    moveHero(-1);
   });
 
   els.heroNext.addEventListener("click", () => {
-    const count = heroList().length;
-    if (!count) return;
-    state.heroIndex = ((state.heroIndex + 1) % count + count) % count;
-    renderHeroStage();
+    moveHero(1);
   });
 
   /* --- Hero drag / swipe (mouse, touch, pen via Pointer Events) --- */
@@ -510,9 +573,7 @@
       const delta = e.clientX - startX;
       const count = heroList().length;
       if (count > 1 && Math.abs(delta) > 55) {
-        const dir = delta < 0 ? 1 : -1;
-        state.heroIndex = ((state.heroIndex + dir) % count + count) % count;
-        renderHeroStage();
+        moveHero(delta < 0 ? 1 : -1);
         didSwipe = true;
       }
       if (didSwipe) {

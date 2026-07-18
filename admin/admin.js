@@ -39,6 +39,18 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>',
     user:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="8" r="4"/><path d="M4 20c0-4 3.6-6 8-6s8 2 8 6"/></svg>',
+    edit:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 013 3L7 19l-4 1 1-4 12.5-12.5z"/></svg>',
+    eye:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7S1 12 1 12z"/><circle cx="12" cy="12" r="3"/></svg>',
+    publish:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h11M5 20V8h9v12"/><path d="M5 12h9M5 16h9"/><path d="M19 17V7M16.5 9.5L19 7l2.5 2.5"/></svg>',
+    unpublish:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h11M5 20V8h9v12"/><path d="M5 12h9M5 16h9"/><path d="M19 7v10M16.5 14.5L19 17l2.5-2.5"/></svg>',
+    trash:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+    close:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   };
 
   const state = {
@@ -53,9 +65,121 @@
     dashboardDateTo: "",
     settings: null,
     error: "",
+    notice: "",
     saving: false,
-    targetMarginRate: 0.3,
+    productCleanFingerprint: "",
   };
+
+  let noticeTimer = null;
+
+  function showNotice(message) {
+    state.notice = String(message || "").trim();
+    if (noticeTimer) {
+      clearTimeout(noticeTimer);
+      noticeTimer = null;
+    }
+    if (!state.notice) return;
+    noticeTimer = setTimeout(() => {
+      if (state.notice === message) {
+        state.notice = "";
+        const toast = document.getElementById("admin-toast");
+        if (toast) toast.remove();
+      }
+      noticeTimer = null;
+    }, 2800);
+    mountToast();
+  }
+
+  function mountToast() {
+    let toast = document.getElementById("admin-toast");
+    if (!state.notice) {
+      if (toast) toast.remove();
+      return;
+    }
+    if (!toast) {
+      toast = el("div", { id: "admin-toast", className: "admin-toast" });
+      document.body.appendChild(toast);
+    }
+    toast.textContent = state.notice;
+    toast.classList.remove("is-show");
+    void toast.offsetWidth;
+    toast.classList.add("is-show");
+  }
+
+  function productSaveFingerprint(product) {
+    if (!product) return "";
+    const prizes = (product.prizes || [])
+      .filter((p) => !p.isLastOne)
+      .map((p, index) => ({
+        id: p.id || "",
+        grade: String(p.grade || ""),
+        name: String(p.name || ""),
+        image: String(p.image || ""),
+        quantity: Number(p.quantity) || 0,
+        cost: Number(p.cost) || 0,
+        sortOrder: index,
+      }));
+    const lastOneEnabled = Boolean(product.lastOneEnabled);
+    const lastOne =
+      lastOneEnabled && product.lastOne
+        ? {
+            id: product.lastOne.id || "",
+            grade: String(product.lastOne.grade || ""),
+            name: String(product.lastOne.name || ""),
+            image: String(product.lastOne.image || ""),
+            cost: Number(product.lastOne.cost) || 0,
+          }
+        : null;
+    const prizeNumberSpecs =
+      (product.drawMode || "shuffle") === "manual"
+        ? Object.fromEntries(
+            prizes.map((prize) => [
+              prize.id,
+              String((product.prizeNumberSpecs && product.prizeNumberSpecs[prize.id]) || ""),
+            ])
+          )
+        : {};
+    return JSON.stringify({
+      name: String(product.name || ""),
+      description: String(product.description || ""),
+      coverImage: String(product.coverImage || ""),
+      price: Number(product.price) || 0,
+      totalDraws: Number(product.totalDraws) || 0,
+      theme: String(product.theme || "light"),
+      foilPreset: String(product.foilPreset || "silver"),
+      foilImage: String(product.foilImage || ""),
+      showRemaining: Boolean(product.showRemaining),
+      scheduleEnabled: Boolean(product.scheduleEnabled),
+      scheduleStart: product.scheduleStart || null,
+      scheduleEnd: product.scheduleEnd || null,
+      drawMode: product.drawMode || "shuffle",
+      soldoutVisibility: product.soldoutVisibility || "show_soldout",
+      lastOneEnabled,
+      prizes,
+      lastOne,
+      prizeNumberSpecs,
+    });
+  }
+
+  function markProductClean() {
+    state.productCleanFingerprint = productSaveFingerprint(state.product);
+    syncSaveButton();
+  }
+
+  function isProductDirty() {
+    if (!state.product) return false;
+    return productSaveFingerprint(state.product) !== state.productCleanFingerprint;
+  }
+
+  function syncSaveButton() {
+    const btn = document.getElementById("product-save-btn");
+    if (!btn) return;
+    btn.disabled = Boolean(state.saving) || !isProductDirty();
+  }
+
+  function notifyProductEdited() {
+    syncSaveButton();
+  }
 
   async function api(path, options = {}) {
     const opts = {
@@ -117,16 +241,62 @@
     });
   }
 
-  function linkAction(label, className, onClick) {
-    return el(
-      "button",
-      {
-        type: "button",
-        className: `link-action${className ? ` ${className}` : ""}`,
-        onClick,
-      },
-      label
-    );
+  function linkAction(label, className, onClick, options) {
+    const disabled = Boolean(options && options.disabled);
+    const iconName = options && options.icon;
+    const attrs = {
+      type: "button",
+      className: `link-action${iconName ? " link-action--icon" : ""}${className ? ` ${className}` : ""}${disabled ? " is-disabled" : ""}`,
+      disabled,
+      onClick: disabled ? undefined : onClick,
+    };
+    if (iconName) attrs["aria-label"] = label;
+    return el("button", attrs, iconName ? icon(iconName) : label);
+  }
+
+  function openProductPreview(product) {
+    if (!product || !product.id) return;
+    const existing = document.getElementById("product-preview-overlay");
+    if (existing) existing.remove();
+
+    const frame = el("iframe", {
+      className: "product-preview__frame",
+      src: `/board?product=${encodeURIComponent(product.id)}&preview=1`,
+      title: product.name || product.id,
+    });
+
+    const overlay = el("div", {
+      className: "product-preview-overlay",
+      id: "product-preview-overlay",
+    }, [
+      el("div", { className: "product-preview", role: "dialog", "aria-modal": "true" }, [
+        el(
+          "button",
+          {
+            type: "button",
+            className: "product-preview__close",
+            "aria-label": "關閉",
+            onClick: () => overlay.remove(),
+          },
+          icon("close")
+        ),
+        frame,
+      ]),
+    ]);
+
+    overlay.addEventListener("click", (event) => {
+      if (event.target === overlay) overlay.remove();
+    });
+
+    function onKey(event) {
+      if (event.key === "Escape") {
+        overlay.remove();
+        document.removeEventListener("keydown", onKey);
+      }
+    }
+    document.addEventListener("keydown", onKey);
+
+    document.body.appendChild(overlay);
   }
 
   function field(label, control) {
@@ -162,6 +332,7 @@
           img.src = url;
           img.style.display = "";
           onChange(url);
+          notifyProductEdited();
         } catch (error) {
           state.error = error.message;
           render();
@@ -186,6 +357,7 @@
               img.removeAttribute("src");
               img.style.display = "none";
               onChange("");
+              notifyProductEdited();
               render();
             },
           },
@@ -224,6 +396,7 @@
           if (empty) empty.remove();
           if (!img.parentElement) wrap.append(img);
           onChange(url);
+          notifyProductEdited();
         } catch (error) {
           state.error = error.message;
           render();
@@ -235,12 +408,214 @@
     return wrap;
   }
 
+  function tempId() {
+    return `tmp_${Math.random().toString(36).slice(2, 10)}`;
+  }
+
   function blankPrize() {
-    return { id: "", name: "", image: "", quantity: 1, cost: 0 };
+    return { id: tempId(), grade: "", name: "", image: "", quantity: 1, cost: 0 };
   }
 
   function blankLastOne() {
-    return { id: "", name: "", image: "", quantity: 1, cost: 0, isLastOne: true };
+    return {
+      id: tempId(),
+      grade: "",
+      name: "",
+      image: "",
+      quantity: 1,
+      cost: 0,
+      isLastOne: true,
+    };
+  }
+
+  function confirmAction(options) {
+    return new Promise((resolve) => {
+      const target = options.target != null ? String(options.target) : "";
+      const action = options.action != null ? String(options.action) : "";
+      const title =
+        target && action
+          ? `確認對"${target}"執行${action}？`
+          : options.title || "";
+      const overlay = el("div", { className: "confirm-overlay" }, [
+        el("div", { className: "confirm-dialog", role: "dialog", "aria-modal": "true" }, [
+          el("div", { className: "confirm-dialog__title", text: title }),
+          !target && options.message
+            ? el("div", { className: "confirm-dialog__message", text: options.message })
+            : null,
+          el("div", { className: "confirm-dialog__actions" }, [
+            el(
+              "button",
+              {
+                type: "button",
+                className: "btn btn--ghost",
+                onClick: () => {
+                  overlay.remove();
+                  resolve(false);
+                },
+              },
+              options.cancelLabel || "取消"
+            ),
+            el(
+              "button",
+              {
+                type: "button",
+                className: `btn${options.danger ? " btn--danger" : ""}`,
+                onClick: () => {
+                  overlay.remove();
+                  resolve(true);
+                },
+              },
+              options.confirmLabel || action || "確認"
+            ),
+          ]),
+        ]),
+      ]);
+      overlay.addEventListener("click", (event) => {
+        if (event.target === overlay) {
+          overlay.remove();
+          resolve(false);
+        }
+      });
+      document.body.appendChild(overlay);
+      const confirmBtn = overlay.querySelector(".confirm-dialog__actions .btn:not(.btn--ghost)");
+      if (confirmBtn) confirmBtn.focus();
+    });
+  }
+
+  function manualBoardError(product) {
+    if ((product.drawMode || "shuffle") !== "manual") return null;
+    const prizes = (product.prizes || []).filter((p) => !p.isLastOne);
+    const total = Number(product.totalDraws) || 0;
+    const qtySum = prizes.reduce((sum, p) => sum + (Number(p.quantity) || 0), 0);
+    if (qtySum !== total) {
+      return `獎項數量加總（${qtySum}）需等於總抽數（${total}）`;
+    }
+    if (typeof PrizeNumberSpec === "undefined") {
+      return "盤面模組未載入";
+    }
+    const specs = ensurePrizeNumberSpecs(product);
+    const built = PrizeNumberSpec.buildSlotDrafts(prizes, specs, total);
+    return built.error || null;
+  }
+
+  function toLocalDateTimeValue(iso) {
+    if (!iso) return "";
+    const date = new Date(iso);
+    if (Number.isNaN(date.getTime())) return "";
+    const pad = (n) => String(n).padStart(2, "0");
+    return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+  }
+
+  function fromLocalDateTimeValue(value) {
+    const text = String(value || "").trim();
+    if (!text) return null;
+    const date = new Date(text);
+    if (Number.isNaN(date.getTime())) return null;
+    return date.toISOString();
+  }
+
+  function ensurePrizeNumberSpecs(product) {
+    const prizes = (product.prizes || []).filter((p) => !p.isLastOne);
+    const totalDraws = Math.max(0, Number(product.totalDraws) || 0);
+    if (!product.prizeNumberSpecs) product.prizeNumberSpecs = {};
+
+    const hasSpecInput = Object.values(product.prizeNumberSpecs).some((value) =>
+      String(value || "").trim()
+    );
+
+    if ((product.slotDrafts || []).length && !hasSpecInput) {
+      product.prizeNumberSpecs = PrizeNumberSpec.specsFromSlotDrafts(
+        product.slotDrafts,
+        prizes
+      );
+    }
+
+    if (product.drawMode === "manual" && !hasSpecInput && !(product.slotDrafts || []).length) {
+      product.prizeNumberSpecs = PrizeNumberSpec.defaultSpecsFromQuantities(prizes, totalDraws);
+    }
+
+    prizes.forEach((prize) => {
+      if (product.prizeNumberSpecs[prize.id] == null) {
+        product.prizeNumberSpecs[prize.id] = "";
+      }
+    });
+    return product.prizeNumberSpecs;
+  }
+
+  function prizeLabel(prize) {
+    if (prize.grade && prize.name) return `${prize.grade} ${prize.name}`;
+    return prize.grade || prize.name || prize.id || "";
+  }
+
+  function renderPrizeSpecRows(product, locked) {
+    const prizes = (product.prizes || []).filter((p) => !p.isLastOne);
+    const totalDraws = Number(product.totalDraws) || 0;
+    ensurePrizeNumberSpecs(product);
+
+    if (locked) {
+      const drafts = (product.slots || []).map((slot) => ({
+        prizeId: slot.prize?.id,
+        number: slot.number,
+      }));
+      const specs =
+        drafts.length > 0
+          ? PrizeNumberSpec.specsFromSlotDrafts(drafts, prizes)
+          : product.prizeNumberSpecs;
+      return el(
+        "div",
+        { className: "prize-spec-list prize-spec-list--readonly" },
+        prizes.map((prize) =>
+          el("div", { className: "prize-spec-row" }, [
+            el("span", { className: "prize-spec__label", text: prizeLabel(prize) }),
+            el("span", { className: "prize-spec__value", text: specs[prize.id] || "—" }),
+          ])
+        )
+      );
+    }
+
+    return el(
+      "div",
+      { className: "prize-spec-list" },
+      prizes.map((prize) => {
+        const qty = Math.max(0, Number(prize.quantity) || 0);
+        const countEl = el("span", { className: "prize-spec__count" });
+        const input = el("input", { type: "text", className: "prize-spec__input" });
+        input.value = product.prizeNumberSpecs[prize.id] || "";
+
+        function syncCount() {
+          const parsed = PrizeNumberSpec.parse(input.value, totalDraws);
+          const count = parsed.error ? "!" : parsed.numbers.length;
+          countEl.textContent = `${count}/${qty}`;
+          countEl.className = `prize-spec__count${
+            !parsed.error && count === qty ? " is-ok" : ""
+          }`;
+        }
+
+        input.addEventListener("input", () => {
+          product.prizeNumberSpecs[prize.id] = input.value;
+          syncCount();
+          notifyProductEdited();
+        });
+        syncCount();
+
+        return el("div", { className: "prize-spec-row" }, [
+          el("span", { className: "prize-spec__label", text: prizeLabel(prize) }),
+          input,
+          countEl,
+        ]);
+      })
+    );
+  }
+
+  function movePrize(product, index, delta) {
+    const next = index + delta;
+    if (next < 0 || next >= product.prizes.length) return;
+    const item = product.prizes.splice(index, 1)[0];
+    product.prizes.splice(next, 0, item);
+    product.prizes.forEach((prize, i) => {
+      prize.sortOrder = i;
+    });
+    render();
   }
 
   function syncLastOneEnabled(product) {
@@ -330,16 +705,8 @@
     return "";
   }
 
-  function getTargetMarginRate() {
-    const slider = document.getElementById("econ-target-margin");
-    if (slider) return Number(slider.value) / 100;
-    return state.targetMarginRate;
-  }
-
   function computeEconomics(product) {
-    return DotteryEconomics.computeEconomics(product, null, {
-      targetMarginRate: getTargetMarginRate(),
-    });
+    return DotteryEconomics.computeEconomics(product);
   }
 
   function profitValueClass(value) {
@@ -347,14 +714,6 @@
     if (amount > 0) return " economics-summary__value--profit";
     if (amount < 0) return " economics-summary__value--loss";
     return "";
-  }
-
-  function formatPriceDelta(delta) {
-    const amount = Math.abs(Number(delta) || 0);
-    if (amount < 0.5) return "與建議價相同";
-    const money = formatMoney(amount).replace(/^NT\$ /, "");
-    if (delta > 0) return `偏高 NT$ ${money}`;
-    return `偏低 NT$ ${money}`;
   }
 
   function renderEconomicsPanel(econ) {
@@ -396,39 +755,6 @@
               text: formatRate(econ.expectedProfitRate),
             }),
           ]),
-          el("div", { className: "economics-summary__row economics-summary__row--slider" }, [
-            el("span", { className: "economics-summary__label", text: "目標利潤率" }),
-            el("div", { className: "economics-slider" }, [
-              el("input", {
-                type: "range",
-                min: "0",
-                max: "90",
-                step: "1",
-                value: String(Math.round(getTargetMarginRate() * 100)),
-                id: "econ-target-margin",
-                onInput: (event) => {
-                  state.targetMarginRate = Number(event.target.value) / 100;
-                  const label = document.getElementById("econ-target-margin-label");
-                  if (label) label.textContent = formatRate(state.targetMarginRate);
-                  if (state.product) refreshProductEconomics(state.product);
-                },
-              }),
-              el("span", {
-                className: "economics-slider__value",
-                id: "econ-target-margin-label",
-                text: formatRate(getTargetMarginRate()),
-              }),
-            ]),
-          ]),
-          el("div", { className: "economics-summary__row" }, [
-            el("span", { className: "economics-summary__label", text: "建議單抽價格" }),
-            el("span", {
-              className: "economics-summary__value",
-              id: "econ-suggested-price",
-              text: formatMoney(econ.suggestedPrice),
-            }),
-          ]),
-          el("div", { className: "economics-summary__compare", id: "econ-price-compare", text: formatPriceDelta(econ.priceDelta) }),
         ]),
       ]
     );
@@ -440,17 +766,13 @@
     const panel = document.getElementById("economics-panel");
     const profitEl = document.getElementById("econ-expected-profit");
     const rateEl = document.getElementById("econ-expected-profit-rate");
-    const suggestedEl = document.getElementById("econ-suggested-price");
-    const compareEl = document.getElementById("econ-price-compare");
     const warningEl = document.getElementById("econ-major-warning");
-    if (!panel || !profitEl || !rateEl || !suggestedEl || !compareEl) return;
+    if (!panel || !profitEl || !rateEl) return;
     panel.className = `economics-panel${next.isLoss ? " economics-panel--loss" : ""}`;
     profitEl.textContent = formatMoney(next.expectedProfit);
     profitEl.className = `economics-summary__value${profitValueClass(next.expectedProfit)}`;
     rateEl.textContent = formatRate(next.expectedProfitRate);
     rateEl.className = `economics-summary__value${profitValueClass(next.expectedProfit)}`;
-    suggestedEl.textContent = formatMoney(next.suggestedPrice);
-    compareEl.textContent = formatPriceDelta(next.priceDelta);
     if (warningEl) {
       const invalid = Boolean(next.stopModel && next.stopModel.invalidMajorCount);
       warningEl.textContent = invalid ? "大獎份數不能超過總張數" : "";
@@ -554,6 +876,10 @@
     state.product.lastOneEnabled = Boolean(
       state.product.lastOne.id || state.product.lastOne.name || state.product.lastOne.image
     );
+    if (!state.product.drawMode) state.product.drawMode = "shuffle";
+    if (!state.product.soldoutVisibility) state.product.soldoutVisibility = "show_soldout";
+    ensurePrizeNumberSpecs(state.product);
+    markProductClean();
   }
 
   function newProductDraft() {
@@ -566,19 +892,27 @@
       description: "",
       coverImage: "",
       price: 0,
-      category: "",
       totalDraws: 12,
       theme: "light",
       foilPreset: "silver",
       foilImage: "",
       showRemaining: defaultRemaining,
+      scheduleEnabled: false,
+      scheduleStart: null,
+      scheduleEnd: null,
+      drawMode: "shuffle",
+      soldoutVisibility: "show_soldout",
       status: "draft",
       prizes: [blankPrize(), blankPrize(), blankPrize()],
       lastOne: blankLastOne(),
       lastOneEnabled: false,
+      slotDrafts: [],
+      prizeNumberSpecs: {},
       slots: [],
       winningNumbers: [],
     };
+    ensurePrizeNumberSpecs(state.product);
+    markProductClean();
   }
 
   async function goDashboard() {
@@ -649,11 +983,11 @@
             type: "button",
             className: "sidebar__link",
             onClick: async () => {
-              await api("/logout", { method: "POST" });
-              state.authed = false;
-              state.view = "dashboard";
-              state.error = "";
-              render();
+              try {
+                await api("/logout", { method: "POST" });
+              } catch (_err) {
+              }
+              window.location.href = "/shop";
             },
           },
           [icon("logout"), "登出"]
@@ -663,35 +997,129 @@
   }
 
   function renderLogin() {
-    const password = el("input", { type: "password", autocomplete: "current-password" });
-    const error = state.error ? el("div", { className: "error", text: state.error }) : null;
+    let digits = "";
+    let submitting = false;
+    let locked = false;
 
-    const form = el("form", { className: "login__card" }, [
-      el("div", { className: "login__brand" }, [
-        el("div", { className: "login__brand-name", text: "Dottery Admin" }),
-        el("div", { className: "login__brand-sub", text: "Management Portal" }),
-      ]),
-      password,
-      error,
-      el("button", { type: "submit", className: "btn", text: "進入" }),
-    ]);
+    const dots = Array.from({ length: 4 }, () => el("span", { className: "pin-dot" }));
+    const dotsRow = el("div", { className: "pin-dots" }, dots);
+    const panel = el("div", { className: "login-lock__panel" }, [dotsRow]);
 
-    form.addEventListener("submit", async (event) => {
-      event.preventDefault();
+    function syncDots() {
+      dots.forEach((dot, index) => {
+        dot.classList.toggle("is-filled", index < digits.length);
+      });
+    }
+
+    function shake() {
+      dotsRow.classList.remove("is-shake");
+      void dotsRow.offsetWidth;
+      dotsRow.classList.add("is-shake");
+    }
+
+    async function submitPin() {
+      if (submitting || locked) return;
+      submitting = true;
+      locked = true;
       state.error = "";
       try {
-        await api("/login", { method: "POST", body: { password: password.value } });
+        await api("/login", { method: "POST", body: { password: digits } });
+        if (state._loginKeyHandler) {
+          document.removeEventListener("keydown", state._loginKeyHandler);
+          state._loginKeyHandler = null;
+        }
         state.authed = true;
         state.view = "dashboard";
         await Promise.all([loadDashboard(), loadSettings(), loadProducts()]);
         render();
       } catch (err) {
         state.error = err.message;
-        render();
+        shake();
+        window.setTimeout(() => {
+          digits = "";
+          syncDots();
+          submitting = false;
+          locked = false;
+        }, 320);
       }
-    });
+    }
 
-    app.replaceChildren(el("div", { className: "login" }, [form]));
+    function pushDigit(digit) {
+      if (submitting || locked || digits.length >= 4) return;
+      digits += digit;
+      syncDots();
+      if (digits.length === 4) {
+        submitPin();
+      }
+    }
+
+    function popDigit() {
+      if (submitting || locked) return;
+      if (!digits.length) {
+        window.location.href = "/shop";
+        return;
+      }
+      digits = digits.slice(0, -1);
+      syncDots();
+    }
+
+    const keys = ["1", "2", "3", "4", "5", "6", "7", "8", "9", "", "0", "del"];
+    const keypad = el(
+      "div",
+      { className: "login-keypad" },
+      keys.map((key) => {
+        if (key === "") {
+          return el("div", { className: "login-keypad__spacer" });
+        }
+        if (key === "del") {
+          return el(
+            "button",
+            {
+              type: "button",
+              className: "login-keypad__key login-keypad__key--action",
+              "aria-label": "刪除",
+              onClick: popDigit,
+            },
+            [
+              el("span", {
+                className: "login-keypad__icon",
+                html:
+                  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 6H9l-6 6 6 6h12a2 2 0 002-2V8a2 2 0 00-2-2z"/><path d="M16 10l-4 4M12 10l4 4"/></svg>',
+              }),
+            ]
+          );
+        }
+        return el(
+          "button",
+          {
+            type: "button",
+            className: "login-keypad__key",
+            onClick: () => pushDigit(key),
+          },
+          [el("span", { className: "login-keypad__digit", text: key })]
+        );
+      })
+    );
+
+    function onKeyDown(event) {
+      if (event.key >= "0" && event.key <= "9") {
+        event.preventDefault();
+        pushDigit(event.key);
+      } else if (event.key === "Backspace") {
+        event.preventDefault();
+        popDigit();
+      }
+    }
+
+    document.removeEventListener("keydown", state._loginKeyHandler);
+    state._loginKeyHandler = onKeyDown;
+    document.addEventListener("keydown", onKeyDown);
+
+    app.replaceChildren(
+      el("div", { className: "login" }, [
+        el("div", { className: "login-lock" }, [panel, keypad]),
+      ])
+    );
   }
 
   function renderDashboard() {
@@ -878,118 +1306,6 @@
       ]),
     ]);
 
-    const productRows = (data.products || []).map((product) => {
-      const pct = product.totalDraws
-        ? (Number(product.scratchedCount) / Number(product.totalDraws)) * 100
-        : 0;
-      const isDraft = product.status === "draft";
-      const periodData =
-        periodMode === "custom"
-          ? product.periodCustom
-          : periodMode === "30"
-            ? product.period30
-            : product.period7;
-      const rowPeriodProfit = periodData ? Number(periodData.profit) || 0 : 0;
-      const rowPeriodRevenue = periodData ? Number(periodData.revenue) || 0 : 0;
-      const rowPeriodScratches = periodData ? Number(periodData.scratches) || 0 : 0;
-      const topLeft = Number(product.topPrizes.left) || 0;
-      const topTotal = Number(product.topPrizes.total) || 0;
-      const topPct = topTotal > 0 ? (topLeft / topTotal) * 100 : 0;
-
-      const progressCell = isDraft
-        ? el("span", { className: "progress-sub", text: "—" })
-        : el("div", { className: "progress-cell" }, [
-            el("div", {
-              className: "progress-text",
-              text: `${Math.round(pct)}%`,
-            }),
-            el("div", {
-              className: "progress-sub",
-              text: `${product.scratchedCount}/${product.totalDraws}`,
-            }),
-            el("div", { className: "progress-bar" }, [
-              el("div", { className: "progress-bar__fill", style: `width:${pct}%` }),
-            ]),
-          ]);
-
-      const topCell = isDraft
-        ? el("span", { className: "progress-sub", text: "—" })
-        : el("div", { className: "progress-cell" }, [
-            el("div", {
-              className: "progress-text",
-              text: `${topLeft}/${topTotal}`,
-            }),
-            el("div", { className: "progress-bar" }, [
-              el("div", {
-                className: "progress-bar__fill progress-bar__fill--muted",
-                style: `width:${topPct}%`,
-              }),
-            ]),
-          ]);
-
-      const profitCell = periodData
-        ? el("div", { className: "dash-profit-cell" }, [
-            el("span", {
-              className: rowPeriodProfit < 0 ? "table__loss" : "",
-              text: formatMoney(rowPeriodProfit),
-            }),
-            rowPeriodRevenue > 0
-              ? el("span", {
-                  className: "dash-profit-cell__sub",
-                  text: formatRate(rowPeriodProfit / rowPeriodRevenue),
-                })
-              : null,
-          ])
-        : el("span", { className: "progress-sub", text: "—" });
-
-      return el("tr", { className: product.done ? "is-done-row" : "" }, [
-        el("td", { className: "table__name", text: product.name || product.id }),
-        el("td", {}, [
-          el("div", { className: "inline" }, [
-            statusBadge(product.status),
-            product.done ? el("span", { className: "badge badge--done", text: "完" }) : null,
-          ]),
-        ]),
-        el("td", {}, [progressCell]),
-        el("td", { text: periodData ? String(rowPeriodScratches) : "—" }),
-        el("td", { text: periodData ? formatMoney(rowPeriodRevenue) : "—" }),
-        el("td", {}, [profitCell]),
-        el("td", {}, [topCell]),
-        el("td", {}, [
-          el("div", { className: "row-actions" }, [
-            linkAction("編輯", "", () => goEdit(product.id)),
-          ]),
-        ]),
-      ]);
-    });
-
-    const productTable = el("div", { className: "table-card" }, [
-      el("div", { className: "panel-head", text: "商品數據" }),
-      el("div", { className: "table-wrap" }, [
-        el("table", { className: "table" }, [
-          el("thead", {}, [
-            el("tr", {}, [
-              el("th", { text: "名稱" }),
-              el("th", { text: "狀態" }),
-              el("th", { text: "完售率" }),
-              el("th", { text: "周期銷量" }),
-              el("th", { text: "周期營收" }),
-              el("th", { text: "周期盈虧" }),
-              el("th", { text: "高階賞" }),
-              el("th", { text: "" }),
-            ]),
-          ]),
-          productRows.length
-            ? el("tbody", {}, productRows)
-            : el("tbody", {}, [
-                el("tr", {}, [
-                  el("td", { colSpan: "7" }, [el("div", { className: "empty", text: "—" })]),
-                ]),
-              ]),
-        ]),
-      ]),
-    ]);
-
     const recent = data.recentActivity || [];
     const activityPanel = el("div", { className: "panel-card" }, [
       el("div", { className: "panel-head", text: "近期刮獎" }),
@@ -1062,13 +1378,10 @@
             state.error ? el("div", { className: "error", text: state.error }) : null,
             pnlHero,
             metricsRow,
-            el("div", { className: "dashboard-grid" }, [
-              productTable,
-              el("div", { className: "dashboard-side" }, [
-                statusPanel,
-                activityPanel,
-                alertsPanel,
-              ]),
+            el("div", { className: "dashboard-side" }, [
+              statusPanel,
+              activityPanel,
+              alertsPanel,
             ]),
           ]),
         ]),
@@ -1085,11 +1398,11 @@
       defaultShowRemaining: true,
     };
     const draft = {
-      shopTitle: settings.shopTitle,
       showPrice: settings.showPrice,
       showProgress: settings.showProgress,
       hideSoldOut: settings.hideSoldOut,
       defaultShowRemaining: settings.defaultShowRemaining,
+      adminPin: "",
     };
 
     function settingsToggle(label, key) {
@@ -1104,16 +1417,72 @@
       ]);
     }
 
-    const titleInput = el("input", { type: "text" });
-    titleInput.value = draft.shopTitle || "";
-    titleInput.addEventListener("input", () => {
-      draft.shopTitle = titleInput.value;
+    const pinInput = el("input", {
+      type: "password",
+      inputmode: "numeric",
+      autocomplete: "new-password",
+      maxlength: "4",
+      pattern: "[0-9]{4}",
+    });
+    pinInput.value = draft.adminPin || "";
+    pinInput.addEventListener("input", () => {
+      draft.adminPin = pinInput.value.replace(/\D/g, "").slice(0, 4);
+      pinInput.value = draft.adminPin;
+      pinSaveBtn.disabled = state.saving || !/^\d{4}$/.test(draft.adminPin);
     });
 
+    const pinSaveBtn = el(
+      "button",
+      {
+        type: "button",
+        className: "btn settings-pin-save",
+        disabled: true,
+        onClick: async () => {
+          if (!/^\d{4}$/.test(draft.adminPin)) {
+            state.error = "密碼須為4位數字";
+            render();
+            return;
+          }
+          const ok = await confirmAction({
+            target: "登入密碼",
+            action: "變更",
+            danger: true,
+          });
+          if (!ok) return;
+          state.error = "";
+          state.saving = true;
+          pinSaveBtn.disabled = true;
+          try {
+            state.settings = await api("/settings", {
+              method: "PUT",
+              body: {
+                shopTitle: settings.shopTitle,
+                showPrice: draft.showPrice,
+                showProgress: draft.showProgress,
+                hideSoldOut: draft.hideSoldOut,
+                defaultShowRemaining: draft.defaultShowRemaining,
+                adminPin: draft.adminPin,
+              },
+            });
+            draft.adminPin = "";
+            pinInput.value = "";
+            showNotice("已儲存");
+          } catch (err) {
+            state.error = err.message;
+          } finally {
+            state.saving = false;
+            pinSaveBtn.disabled = !/^\d{4}$/.test(draft.adminPin);
+            render();
+          }
+        },
+      },
+      "儲存"
+    );
+
     const form = el("div", { className: "settings-card" }, [
-      el("div", { className: "settings-row" }, [
-        el("span", { className: "settings-row__label", text: "首頁標題" }),
-        titleInput,
+      el("div", { className: "settings-row settings-row--pin" }, [
+        el("span", { className: "settings-row__label", text: "登入密碼" }),
+        el("div", { className: "settings-pin-field" }, [pinInput, pinSaveBtn]),
       ]),
       settingsToggle("商品列表顯示價格", "showPrice"),
       settingsToggle("商品列表顯示進度", "showProgress"),
@@ -1132,8 +1501,15 @@
             try {
               state.settings = await api("/settings", {
                 method: "PUT",
-                body: draft,
+                body: {
+                  shopTitle: settings.shopTitle,
+                  showPrice: draft.showPrice,
+                  showProgress: draft.showProgress,
+                  hideSoldOut: draft.hideSoldOut,
+                  defaultShowRemaining: draft.defaultShowRemaining,
+                },
               });
+              showNotice("已儲存");
             } catch (err) {
               state.error = err.message;
             } finally {
@@ -1245,17 +1621,79 @@
       const isDraft = product.status === "draft";
       const paused = product.status === "unpublished";
 
-      const actions = [
-        linkAction("編輯", "", () => goEdit(product.id)),
-        !isDraft ? linkAction("查看", "", () => goEdit(product.id)) : null,
-        product.status !== "published"
-          ? linkAction("刪除", "link-action--danger", async () => {
+      const isPublished = product.status === "published";
+      const canDelete = !isPublished;
+
+      const actions = el("div", { className: "row-actions" }, [
+        linkAction("編輯", "", () => goEdit(product.id), { icon: "edit" }),
+        linkAction("查看", "", () => openProductPreview(product), { icon: "eye" }),
+        isPublished
+          ? linkAction(
+              "下架",
+              "link-action--danger",
+              async () => {
+                const ok = await confirmAction({
+                  target: product.name || product.id,
+                  action: "下架",
+                  danger: true,
+                });
+                if (!ok) return;
+                try {
+                  await api(`/products/${product.id}/unpublish`, { method: "POST" });
+                  showNotice("已下架");
+                  await loadProducts();
+                  render();
+                } catch (err) {
+                  state.error = err.message;
+                  render();
+                }
+              },
+              { icon: "unpublish" }
+            )
+          : linkAction(
+              "上架",
+              "link-action--publish",
+              async () => {
+                const ok = await confirmAction({
+                  target: product.name || product.id,
+                  action: "上架",
+                });
+                if (!ok) return;
+                try {
+                  await api(`/products/${product.id}/publish`, { method: "POST" });
+                  showNotice("已上架");
+                  await loadProducts();
+                  render();
+                } catch (err) {
+                  state.error = err.message;
+                  render();
+                }
+              },
+              { icon: "publish" }
+            ),
+        linkAction(
+          "刪除",
+          "link-action--danger",
+          async () => {
+            const ok = await confirmAction({
+              target: product.name || product.id,
+              action: "刪除",
+              danger: true,
+            });
+            if (!ok) return;
+            try {
               await api(`/products/${product.id}`, { method: "DELETE" });
+              showNotice("已刪除");
               await loadProducts();
               render();
-            })
-          : null,
-      ];
+            } catch (err) {
+              state.error = err.message;
+              render();
+            }
+          },
+          { icon: "trash", disabled: !canDelete }
+        ),
+      ]);
 
       const progressCell = isDraft
         ? el("span", { className: "progress-sub", text: "—" })
@@ -1287,7 +1725,7 @@
           ]),
         ]),
         el("td", {}, [progressCell]),
-        el("td", {}, [el("div", { className: "row-actions" }, actions)]),
+        el("td", {}, [actions]),
       ]);
     });
 
@@ -1309,7 +1747,7 @@
               el("th", { text: "名稱" }),
               el("th", { text: "狀態" }),
               el("th", { text: "進度" }),
-              el("th", { text: "Actions" }),
+              el("th", { text: "" }),
             ]),
           ]),
           tableBody,
@@ -1350,7 +1788,13 @@
 
   function bindValue(input, getter, setter) {
     input.value = getter();
-    input.addEventListener("input", () => setter(input.value));
+    input.addEventListener("input", () => {
+      setter(input.value);
+      notifyProductEdited();
+    });
+    input.addEventListener("change", () => {
+      notifyProductEdited();
+    });
     return input;
   }
 
@@ -1466,10 +1910,24 @@
             type: "button",
             className: "chip",
             onClick: async () => {
-              state.product = await api(`/products/${product.id}/reset`, { method: "POST" });
-              if (!state.product.lastOne) state.product.lastOne = blankLastOne();
-              state.product.prizes = (state.product.prizes || []).filter((p) => !p.isLastOne);
-              render();
+              const ok = await confirmAction({
+                target: product.name || product.id,
+                action: "重置",
+                danger: true,
+              });
+              if (!ok) return;
+              try {
+                state.product = await api(`/products/${product.id}/reset`, { method: "POST" });
+                if (!state.product.lastOne) state.product.lastOne = blankLastOne();
+                state.product.prizes = (state.product.prizes || []).filter((p) => !p.isLastOne);
+                ensurePrizeNumberSpecs(state.product);
+                markProductClean();
+                showNotice("已重置");
+                render();
+              } catch (err) {
+                state.error = err.message;
+                render();
+              }
             },
           },
           "重置"
@@ -1515,6 +1973,13 @@
     const econ = computeEconomics(product);
 
     const prizes = (product.prizes || []).map((prize, index) => {
+      const grade = bindValue(
+        el("input", { disabled: locked }),
+        () => prize.grade || "",
+        (v) => {
+          prize.grade = v;
+        }
+      );
       const name = bindValue(
         el("input", { disabled: locked }),
         () => prize.name,
@@ -1555,9 +2020,34 @@
           : imagePicker(prize.image, (url) => {
               prize.image = url;
             }),
+        grade,
         name,
         qty,
         cost,
+        locked
+          ? el("div")
+          : el("div", { className: "prize-row__sort" }, [
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "prize-row__sort-btn",
+                  disabled: index === 0,
+                  onClick: () => movePrize(product, index, -1),
+                },
+                "↑"
+              ),
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "prize-row__sort-btn",
+                  disabled: index === product.prizes.length - 1,
+                  onClick: () => movePrize(product, index, 1),
+                },
+                "↓"
+              ),
+            ]),
         el(
           "button",
           {
@@ -1605,11 +2095,23 @@
                 type: "button",
                 className: "btn btn--secondary",
                 onClick: async () => {
+                  const boardError = manualBoardError(product);
+                  if (boardError) {
+                    state.error = boardError;
+                    render();
+                    return;
+                  }
+                  const ok = await confirmAction({
+                    target: product.name || product.id,
+                    action: "上架",
+                  });
+                  if (!ok) return;
                   try {
                     await saveProduct(true);
                     await api(`/products/${product.id}/publish`, { method: "POST" });
                     await loadProduct(product.id);
-                    render();
+                    showNotice("已上架");
+                    await goList();
                   } catch (err) {
                     state.error = err.message;
                     render();
@@ -1626,10 +2128,17 @@
                 type: "button",
                 className: "btn btn--secondary",
                 onClick: async () => {
+                  const ok = await confirmAction({
+                    target: product.name || product.id,
+                    action: "下架",
+                    danger: true,
+                  });
+                  if (!ok) return;
                   try {
                     await api(`/products/${product.id}/unpublish`, { method: "POST" });
                     await loadProduct(product.id);
-                    render();
+                    showNotice("已下架");
+                    await goList();
                   } catch (err) {
                     state.error = err.message;
                     render();
@@ -1643,38 +2152,33 @@
           "button",
           {
             type: "button",
+            id: "product-save-btn",
             className: "btn",
-            disabled: state.saving,
-            onClick: saveProduct,
+            disabled: state.saving || !isProductDirty(),
+            onClick: () => {
+              saveProduct(false).catch(() => {});
+            },
           },
           "儲存"
         ),
       ]),
     ]);
 
-    const basic = el("div", { className: "panel stack" }, [
+    const basic = el("div", { className: "panel panel-form stack" }, [
       el("div", { className: "panel__title", text: "基本" }),
       el("div", { className: "form-grid" }, [
-        field(
-          "名稱",
-          bindValue(
-            el("input", {}),
-            () => product.name,
-            (v) => {
-              product.name = v;
-            }
-          )
-        ),
-        field(
-          "分類",
-          bindValue(
-            el("input", {}),
-            () => product.category,
-            (v) => {
-              product.category = v;
-            }
-          )
-        ),
+        el("div", { className: "full" }, [
+          field(
+            "名稱",
+            bindValue(
+              el("input", {}),
+              () => product.name,
+              (v) => {
+                product.name = v;
+              }
+            )
+          ),
+        ]),
         el("div", { className: "full" }, [
           field(
             "描述",
@@ -1695,33 +2199,128 @@
             })
           ),
         ]),
+        el("div", { className: "form-grid form-grid--pair full" }, [
+          field(
+            "價格 (NTD)",
+            bindValue(
+              el("input", { type: "number", min: "0", step: "1" }),
+              () => String(product.price ?? 0),
+              (v) => {
+                product.price = Number(v) || 0;
+                refreshProductEconomics(product);
+              }
+            )
+          ),
+          field(
+            "總抽數",
+            (() => {
+              const input = el("input", { type: "number", min: "1", disabled: locked });
+              input.value = String(product.totalDraws);
+              input.addEventListener("input", () => {
+                product.totalDraws = Math.max(1, Number(input.value) || 1);
+                if (product.drawMode === "manual") {
+                  product.prizeNumberSpecs = PrizeNumberSpec.defaultSpecsFromQuantities(
+                    product.prizes || [],
+                    product.totalDraws
+                  );
+                }
+                renderEditSummary();
+                notifyProductEdited();
+              });
+              return input;
+            })()
+          ),
+        ]),
+      ]),
+    ]);
+
+    const schedulePanel = el("div", { className: "panel panel-form stack" }, [
+      el("div", { className: "panel__title", text: "檔期" }),
+      el("div", { className: "form-grid" }, [
+        el("div", { className: "full" }, [
+          el("label", { className: "toggle" }, [
+            (() => {
+              const input = el("input", { type: "checkbox" });
+              input.checked = Boolean(product.scheduleEnabled);
+              input.addEventListener("change", () => {
+                product.scheduleEnabled = input.checked;
+                render();
+              });
+              return input;
+            })(),
+            el("span", { text: "啟用檔期" }),
+          ]),
+        ]),
+        product.scheduleEnabled
+          ? el("div", { className: "form-grid form-grid--pair full" }, [
+              field(
+                "開始",
+                (() => {
+                  const input = el("input", { type: "datetime-local" });
+                  input.value = toLocalDateTimeValue(product.scheduleStart);
+                  input.addEventListener("change", () => {
+                    product.scheduleStart = fromLocalDateTimeValue(input.value);
+                  });
+                  return input;
+                })()
+              ),
+              field(
+                "結束",
+                (() => {
+                  const input = el("input", { type: "datetime-local" });
+                  input.value = toLocalDateTimeValue(product.scheduleEnd);
+                  input.addEventListener("change", () => {
+                    product.scheduleEnd = fromLocalDateTimeValue(input.value);
+                  });
+                  return input;
+                })()
+              ),
+            ])
+          : null,
         field(
-          "價格 (NTD)",
-          bindValue(
-            el("input", { type: "number", min: "0", step: "1" }),
-            () => String(product.price ?? 0),
-            (v) => {
-              product.price = Number(v) || 0;
-              refreshProductEconomics(product);
-            }
-          )
-        ),
-        field(
-          "總抽數",
+          "完售",
           (() => {
-            const input = el("input", { type: "number", min: "1", disabled: locked });
-            input.value = String(product.totalDraws);
-            input.addEventListener("input", () => {
-              product.totalDraws = Math.max(1, Number(input.value) || 1);
-              renderEditSummary();
+            const select = el("select", {}, [
+              el("option", { value: "show_soldout", text: "保留" }),
+              el("option", { value: "hide", text: "隱藏" }),
+              el("option", { value: "auto_unpublish", text: "下架" }),
+            ]);
+            select.value = product.soldoutVisibility || "show_soldout";
+            select.addEventListener("change", () => {
+              product.soldoutVisibility = select.value;
             });
-            return input;
+            return select;
           })()
         ),
       ]),
     ]);
 
-    const prizePanel = el("div", { className: "panel stack" }, [
+    const boardPanel = el("div", { className: "panel panel-form stack" }, [
+      el("div", { className: "panel__title", text: "盤面" }),
+      el("div", { className: "form-grid" }, [
+        field(
+          "模式",
+          (() => {
+            const select = el("select", { disabled: locked }, [
+              el("option", { value: "shuffle", text: "隨機" }),
+              el("option", { value: "manual", text: "手動" }),
+            ]);
+            select.value = product.drawMode || "shuffle";
+            select.addEventListener("change", () => {
+              product.drawMode = select.value;
+              if (product.drawMode === "manual") {
+                ensurePrizeNumberSpecs(product);
+              }
+              render();
+            });
+            return select;
+          })()
+        ),
+      ]),
+      product.drawMode === "manual" ? renderPrizeSpecRows(product, locked) : null,
+    ]);
+
+    const prizePanel = el("div", { className: "panel panel-prize stack" }, [
       el("div", { className: "panel__head" }, [
         el("div", { className: "panel__title", text: "獎項" }),
         el(
@@ -1740,9 +2339,11 @@
       ]),
       el("div", { className: "prize-table-head" }, [
         el("span", { text: "圖片" }),
+        el("span", { text: "等級" }),
         el("span", { text: "名稱" }),
         el("span", { text: "數量" }),
         el("span", { text: "成本" }),
+        el("span", { text: "排序" }),
         el("span", {}),
       ]),
       el("div", { className: "prize-list" }, prizes),
@@ -1777,6 +2378,13 @@
                 }),
             bindValue(
               el("input", { disabled: locked }),
+              () => product.lastOne.grade || "",
+              (v) => {
+                product.lastOne.grade = v;
+              }
+            ),
+            bindValue(
+              el("input", { disabled: locked }),
               () => product.lastOne.name,
               (v) => {
                 product.lastOne.name = v;
@@ -1792,55 +2400,58 @@
               }
             ),
             el("div"),
+            el("div"),
           ])
         : null,
     ]);
 
-    const appearance = el("div", { className: "panel stack" }, [
+    const appearance = el("div", { className: "panel panel-form stack" }, [
       el("div", { className: "panel__title", text: "外觀" }),
       el("div", { className: "form-grid" }, [
-        field(
-          "主題",
-          (() => {
-            const select = el(
-              "select",
-              {},
-              THEMES.map((t) =>
-                el("option", {
-                  value: t.value,
-                  text: t.label,
-                  selected: product.theme === t.value,
-                })
-              )
-            );
-            select.value = product.theme || "light";
-            select.addEventListener("change", () => {
-              product.theme = select.value;
-            });
-            return select;
-          })()
-        ),
-        field(
-          "刮膜",
-          (() => {
-            const select = el(
-              "select",
-              {},
-              FOILS.map((t) =>
-                el("option", {
-                  value: t.value,
-                  text: t.label,
-                  selected: product.foilPreset === t.value,
-                })
-              )
-            );
-            select.value = product.foilPreset || "silver";
-            select.addEventListener("change", () => {
-              product.foilPreset = select.value;
-            });
-            return select;
-          })()
-        ),
+        el("div", { className: "form-grid form-grid--pair full" }, [
+          field(
+            "主題",
+            (() => {
+              const select = el(
+                "select",
+                {},
+                THEMES.map((t) =>
+                  el("option", {
+                    value: t.value,
+                    text: t.label,
+                    selected: product.theme === t.value,
+                  })
+                )
+              );
+              select.value = product.theme || "light";
+              select.addEventListener("change", () => {
+                product.theme = select.value;
+              });
+              return select;
+            })()
+          ),
+          field(
+            "刮膜",
+            (() => {
+              const select = el(
+                "select",
+                {},
+                FOILS.map((t) =>
+                  el("option", {
+                    value: t.value,
+                    text: t.label,
+                    selected: product.foilPreset === t.value,
+                  })
+                )
+              );
+              select.value = product.foilPreset || "silver";
+              select.addEventListener("change", () => {
+                product.foilPreset = select.value;
+              });
+              return select;
+            })()
+          ),
+        ]),
         el("div", { className: "full" }, [
           field(
             "自訂刮膜",
@@ -1865,6 +2476,16 @@
       ]),
     ]);
 
+    const editorScroll = el("div", { className: "editor-scroll" }, [
+      basic,
+      schedulePanel,
+      prizePanel,
+      boardPanel,
+      appearance,
+    ]);
+    editorScroll.addEventListener("input", notifyProductEdited);
+    editorScroll.addEventListener("change", notifyProductEdited);
+
     app.replaceChildren(
       el("div", { className: "app-shell" }, [
         renderSidebar(),
@@ -1880,7 +2501,7 @@
                   "div",
                   { className: `editor-body${hasPreview ? " has-preview" : ""}` },
                   [
-                    el("div", { className: "editor-scroll" }, [basic, prizePanel, appearance]),
+                    editorScroll,
                     hasPreview ? buildPreviewRail(product) : null,
                   ]
                 ),
@@ -1890,9 +2511,11 @@
         ]),
       ])
     );
+    syncSaveButton();
   }
 
   async function saveProduct(silent) {
+    const quiet = silent === true;
     const product = state.product;
     state.saving = true;
     state.error = "";
@@ -1902,18 +2525,24 @@
         description: product.description,
         coverImage: product.coverImage,
         price: product.price,
-        category: product.category,
         totalDraws: product.totalDraws,
         theme: product.theme,
         foilPreset: product.foilPreset,
         foilImage: product.foilImage,
         showRemaining: product.showRemaining,
-        prizes: (product.prizes || []).map((p) => ({
+        scheduleEnabled: Boolean(product.scheduleEnabled),
+        scheduleStart: product.scheduleStart || null,
+        scheduleEnd: product.scheduleEnd || null,
+        drawMode: product.drawMode || "shuffle",
+        soldoutVisibility: product.soldoutVisibility || "show_soldout",
+        prizes: (product.prizes || []).map((p, index) => ({
           id: p.id || undefined,
+          grade: p.grade || "",
           name: p.name,
           image: p.image,
           quantity: Number(p.quantity) || 1,
           cost: Number(p.cost) || 0,
+          sortOrder: index,
         })),
         lastOne:
           product.lastOneEnabled &&
@@ -1921,12 +2550,20 @@
           (product.lastOne.name || product.lastOne.image)
             ? {
                 id: product.lastOne.id || undefined,
+                grade: product.lastOne.grade || "",
                 name: product.lastOne.name,
                 image: product.lastOne.image,
                 cost: Number(product.lastOne.cost) || 0,
               }
             : null,
       };
+
+      if (product.drawMode === "manual") {
+        const specs = ensurePrizeNumberSpecs(product);
+        if (!manualBoardError(product)) {
+          payload.prizeNumberSpecs = specs;
+        }
+      }
 
       if (product.id) {
         state.product = await api(`/products/${product.id}`, {
@@ -1944,13 +2581,22 @@
         state.product.lastOne = blankLastOne();
       }
       state.product.prizes = (state.product.prizes || []).filter((p) => !p.isLastOne);
-      if (!silent) render();
+      if (product.prizeNumberSpecs) {
+        state.product.prizeNumberSpecs = product.prizeNumberSpecs;
+      }
+      ensurePrizeNumberSpecs(state.product);
+      markProductClean();
+      if (!quiet) {
+        await goList();
+        showNotice("已儲存");
+      }
     } catch (err) {
       state.error = err.message;
       render();
       throw err;
     } finally {
       state.saving = false;
+      syncSaveButton();
     }
   }
 
@@ -1958,6 +2604,10 @@
     if (!state.authed) {
       renderLogin();
       return;
+    }
+    if (state._loginKeyHandler) {
+      document.removeEventListener("keydown", state._loginKeyHandler);
+      state._loginKeyHandler = null;
     }
     if (state.view === "edit" || state.view === "status") {
       if (state.view === "status" && state.product) {

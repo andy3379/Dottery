@@ -255,6 +255,10 @@ a {
   pointer-events: none;
 }
 
+.hero-card--center .hero-card__clip {
+  transform: translateZ(0) scale(1);
+}
+
 .hero-card--side .hero-card__clip {
   transform: translateZ(0) scale(1.03);
 }
@@ -272,6 +276,17 @@ a {
   box-shadow:
     0 40px 70px -32px rgba(20, 20, 35, 0.4),
     0 28px 56px -8px rgba(20, 20, 35, 0.18);
+}
+
+.hero-card--locked {
+  opacity: 0.72;
+  cursor: default;
+}
+
+.hero-card--locked.hero-card--center {
+  box-shadow:
+    0 24px 48px -28px rgba(20, 20, 35, 0.28),
+    0 16px 32px -8px rgba(20, 20, 35, 0.12);
 }
 
 .hero-card__link {

@@ -2,10 +2,13 @@
 
 const { nanoid } = require("nanoid");
 const { computeEconomics } = require("../admin/economics");
+const PrizeNumberSpec = require("../admin/prize-number-spec");
 
 const STATUSES = ["draft", "published", "unpublished"];
 const THEMES = ["light", "warm", "cool", "dark", "rose"];
 const FOIL_PRESETS = ["silver", "gold", "color"];
+const DRAW_MODES = ["shuffle", "manual"];
+const SOLDOUT_VISIBILITY = ["hide", "show_soldout", "auto_unpublish"];
 
 function nowIso() {
   return new Date().toISOString();
@@ -69,10 +72,62 @@ function rowToProduct(row) {
     foilPreset: row.foil_preset,
     foilImage: row.foil_image,
     showRemaining: Boolean(row.show_remaining),
+    scheduleEnabled: Boolean(row.schedule_enabled),
+    scheduleStart: row.schedule_start || null,
+    scheduleEnd: row.schedule_end || null,
+    drawMode: DRAW_MODES.includes(row.draw_mode) ? row.draw_mode : "shuffle",
+    sortOrder: Number(row.sort_order) || 0,
+    soldoutVisibility: SOLDOUT_VISIBILITY.includes(row.soldout_visibility)
+      ? row.soldout_visibility
+      : "show_soldout",
     publishedAt: row.published_at,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
   };
+}
+
+function getScheduleStatus(product) {
+  if (!product.scheduleEnabled) return "none";
+  const now = Date.now();
+  const start = product.scheduleStart ? Date.parse(product.scheduleStart) : NaN;
+  const end = product.scheduleEnd ? Date.parse(product.scheduleEnd) : NaN;
+  if (Number.isFinite(start) && now < start) return "upcoming";
+  if (Number.isFinite(end) && now > end) return "ended";
+  return "active";
+}
+
+function isProductPlayable(row) {
+  if (!row || row.status !== "published") {
+    return { ok: false, reason: "商品未上架" };
+  }
+  const product = rowToProduct(row);
+  const scheduleStatus = getScheduleStatus(product);
+  if (scheduleStatus === "upcoming") {
+    return { ok: false, reason: "檔期尚未開始" };
+  }
+  if (scheduleStatus === "ended") {
+    return { ok: false, reason: "檔期已結束" };
+  }
+  return { ok: true, scheduleStatus };
+}
+
+function isProductSoldOut(db, productId, row) {
+  const totalDraws = row ? row.total_draws : 0;
+  const scratchedCount = getScratchedCount(db, productId);
+  return totalDraws > 0 && scratchedCount >= totalDraws;
+}
+
+function isProductVisibleInShop(db, row, settings) {
+  if (!row || row.status !== "published") return false;
+  const product = rowToProduct(row);
+  if (product.scheduleEnabled && getScheduleStatus(product) === "ended") {
+    return false;
+  }
+  if (isProductSoldOut(db, row.id, row)) {
+    if (settings && settings.hideSoldOut) return false;
+    if (product.soldoutVisibility === "hide") return false;
+  }
+  return true;
 }
 
 function rowToPrize(row) {
@@ -166,6 +221,7 @@ function remainingByPrize(db, productId) {
     .all(productId)
     .map((row) => ({
       id: row.id,
+      grade: row.grade,
       name: row.name,
       image: row.image,
       quantity: row.quantity,
@@ -214,6 +270,10 @@ function buildProductDetail(db, productId, options = {}) {
 
   let slots = [];
   let scratchLog = [];
+  let slotDrafts = [];
+  if (options.includeSlotDrafts) {
+    slotDrafts = getSlotDrafts(db, productId);
+  }
   if (row.status === "published" || row.status === "unpublished" || options.includeSlots) {
     const allSlots = getSlots(db, productId);
     slots = allSlots.map((slot) => {
@@ -245,6 +305,7 @@ function buildProductDetail(db, productId, options = {}) {
 
   return {
     ...product,
+    scheduleStatus: getScheduleStatus(product),
     prizes,
     lastOne,
     scratchedCount,
@@ -255,6 +316,7 @@ function buildProductDetail(db, productId, options = {}) {
     })),
     winningNumbers: numbers,
     slots,
+    slotDrafts,
     scratchLog,
     layout: {
       slotSize: 88,
@@ -288,6 +350,126 @@ function normalizePrizeInput(input, index) {
     isLastOne: Boolean(input.isLastOne),
     sortOrder: Number.isFinite(input.sortOrder) ? input.sortOrder : index,
   };
+}
+
+function getSlotDrafts(db, productId) {
+  return db
+    .prepare(
+      `SELECT slot_index, number, prize_id AS prizeId
+       FROM slot_drafts
+       WHERE product_id = ?
+       ORDER BY slot_index ASC`
+    )
+    .all(productId)
+    .map((row) => ({
+      slotIndex: row.slot_index,
+      number: row.number,
+      prizeId: row.prizeId,
+    }));
+}
+
+function saveSlotDrafts(db, productId, draftsInput, totalDraws) {
+  const drafts = (draftsInput || []).map((item, index) => ({
+    slotIndex: Number.isInteger(item.slotIndex) ? item.slotIndex : index,
+    number: Number(item.number),
+    prizeId: String(item.prizeId || "").trim(),
+  }));
+
+  if (drafts.length !== totalDraws) {
+    return { error: `需配置 ${totalDraws} 個格位`, status: 400 };
+  }
+
+  const insert = db.prepare(
+    `INSERT INTO slot_drafts (product_id, slot_index, number, prize_id)
+     VALUES (?, ?, ?, ?)`
+  );
+
+  const tx = db.transaction(() => {
+    db.prepare(`DELETE FROM slot_drafts WHERE product_id = ?`).run(productId);
+    drafts.forEach((draft) => {
+      insert.run(productId, draft.slotIndex, draft.number, draft.prizeId);
+    });
+  });
+
+  tx();
+  return { drafts: getSlotDrafts(db, productId) };
+}
+
+function buildSlotDraftsFromPrizeSpecs(prizes, specs, totalDraws) {
+  return PrizeNumberSpec.buildSlotDrafts(prizes, specs, totalDraws);
+}
+
+function validateManualSlots(drafts, prizes, totalDraws) {
+  if (!drafts || drafts.length !== totalDraws) {
+    return `需配置 ${totalDraws} 個格位`;
+  }
+
+  const regular = prizes.filter((p) => !p.isLastOne);
+  const prizeIds = new Set(regular.map((p) => p.id));
+  const expectedCounts = new Map(regular.map((p) => [p.id, p.quantity]));
+  const actualCounts = new Map();
+  const numbers = new Set();
+
+  for (const draft of drafts) {
+    if (!prizeIds.has(draft.prizeId)) {
+      return "含無效獎項";
+    }
+    const num = Number(draft.number);
+    if (!Number.isInteger(num) || num < 1 || num > totalDraws) {
+      return "號碼無效";
+    }
+    if (numbers.has(num)) {
+      return "號碼重複";
+    }
+    numbers.add(num);
+    actualCounts.set(draft.prizeId, (actualCounts.get(draft.prizeId) || 0) + 1);
+  }
+
+  if (numbers.size !== totalDraws) {
+    return "號碼需涵蓋 1 至 N";
+  }
+
+  for (const prize of regular) {
+    if ((actualCounts.get(prize.id) || 0) !== prize.quantity) {
+      return `獎項「${prize.name || prize.grade}」配置數量不符`;
+    }
+  }
+
+  return null;
+}
+
+function syncScheduledProducts(db) {
+  const stamp = nowIso();
+
+  const scheduledDrafts = db
+    .prepare(
+      `SELECT * FROM products
+       WHERE status = 'draft'
+         AND schedule_enabled = 1
+         AND schedule_start IS NOT NULL
+         AND schedule_start <= ?`
+    )
+    .all(stamp);
+
+  scheduledDrafts.forEach((row) => {
+    if (row.schedule_end && row.schedule_end < stamp) return;
+    publishProduct(db, row.id);
+  });
+
+  const autoUnpublishRows = db
+    .prepare(
+      `SELECT * FROM products
+       WHERE status = 'published' AND soldout_visibility = 'auto_unpublish'`
+    )
+    .all();
+
+  autoUnpublishRows.forEach((row) => {
+    if (isProductSoldOut(db, row.id, row)) {
+      db.prepare(
+        `UPDATE products SET status = 'unpublished', updated_at = ? WHERE id = ?`
+      ).run(stamp, row.id);
+    }
+  });
 }
 
 
@@ -373,18 +555,38 @@ function publishProduct(db, productId) {
     return { error, status: 400 };
   }
 
-  const regular = prizeRows.filter((p) => !p.isLastOne);
-  const prizeBag = [];
-  for (const prize of regular) {
-    for (let i = 0; i < prize.quantity; i++) {
-      prizeBag.push(prize.id);
+  const drawMode = DRAW_MODES.includes(product.draw_mode) ? product.draw_mode : "shuffle";
+  let manualDrafts = null;
+
+  if (drawMode === "manual") {
+    manualDrafts = getSlotDrafts(db, productId);
+    const manualError = validateManualSlots(manualDrafts, prizeRows, product.total_draws);
+    if (manualError) {
+      return { error: manualError, status: 400 };
     }
   }
 
-  const shuffledPrizes = shuffle(prizeBag);
-  const numbers = shuffle(
-    Array.from({ length: product.total_draws }, (_, i) => i + 1)
-  );
+  const regular = prizeRows.filter((p) => !p.isLastOne);
+  const shuffledPrizes = [];
+  const numbers = [];
+
+  if (drawMode === "manual") {
+    manualDrafts.forEach((draft) => {
+      shuffledPrizes.push(draft.prizeId);
+      numbers.push(draft.number);
+    });
+  } else {
+    const prizeBag = [];
+    for (const prize of regular) {
+      for (let i = 0; i < prize.quantity; i++) {
+        prizeBag.push(prize.id);
+      }
+    }
+    shuffledPrizes.push(...shuffle(prizeBag));
+    numbers.push(
+      ...shuffle(Array.from({ length: product.total_draws }, (_, i) => i + 1))
+    );
+  }
 
   const insertSlot = db.prepare(
     `INSERT INTO slots (id, product_id, slot_index, number, prize_id, scratched, scratched_at)
@@ -394,6 +596,7 @@ function publishProduct(db, productId) {
   const stamp = nowIso();
   const tx = db.transaction(() => {
     db.prepare(`DELETE FROM slots WHERE product_id = ?`).run(productId);
+    db.prepare(`DELETE FROM slot_drafts WHERE product_id = ?`).run(productId);
 
     for (let i = 0; i < product.total_draws; i++) {
       insertSlot.run(
@@ -462,8 +665,9 @@ function claimSlot(db, productId, slotIndex) {
   if (!product) {
     return { error: "找不到商品", status: 404 };
   }
-  if (product.status !== "published") {
-    return { error: "商品未上架", status: 400 };
+  const playable = isProductPlayable(product);
+  if (!playable.ok) {
+    return { error: playable.reason, status: 400 };
   }
 
   const slot = loadSlotWithPrize(db, productId, slotIndex);
@@ -491,8 +695,9 @@ function scratchSlot(db, productId, slotIndex) {
   if (!product) {
     return { error: "找不到商品", status: 404 };
   }
-  if (product.status !== "published") {
-    return { error: "商品未上架", status: 400 };
+  const playable = isProductPlayable(product);
+  if (!playable.ok) {
+    return { error: playable.reason, status: 400 };
   }
 
   const slot = loadSlotWithPrize(db, productId, slotIndex);
@@ -547,6 +752,12 @@ function getSettings(db) {
   return rowToSettings(row);
 }
 
+function getAdminPin(db) {
+  const row = db.prepare(`SELECT admin_pin FROM settings WHERE id = 1`).get();
+  const pin = row ? String(row.admin_pin || "") : "";
+  return /^\d{4}$/.test(pin) ? pin : "0000";
+}
+
 function saveSettings(db, input) {
   const current = getSettings(db) || {
     shopTitle: "Dottery",
@@ -569,19 +780,42 @@ function saveSettings(db, input) {
     updatedAt: nowIso(),
   };
 
-  db.prepare(
-    `UPDATE settings SET
-      shop_title = ?, show_price = ?, show_progress = ?,
-      hide_soldout = ?, default_show_remaining = ?, updated_at = ?
-     WHERE id = 1`
-  ).run(
-    next.shopTitle || "Dottery",
-    next.showPrice ? 1 : 0,
-    next.showProgress ? 1 : 0,
-    next.hideSoldOut ? 1 : 0,
-    next.defaultShowRemaining ? 1 : 0,
-    next.updatedAt
-  );
+  const pinInput = input.adminPin != null ? String(input.adminPin).trim() : "";
+  if (pinInput) {
+    if (!/^\d{4}$/.test(pinInput)) {
+      const err = new Error("密碼須為4位數字");
+      err.status = 400;
+      throw err;
+    }
+    db.prepare(
+      `UPDATE settings SET
+        shop_title = ?, show_price = ?, show_progress = ?,
+        hide_soldout = ?, default_show_remaining = ?, admin_pin = ?, updated_at = ?
+       WHERE id = 1`
+    ).run(
+      next.shopTitle || "Dottery",
+      next.showPrice ? 1 : 0,
+      next.showProgress ? 1 : 0,
+      next.hideSoldOut ? 1 : 0,
+      next.defaultShowRemaining ? 1 : 0,
+      pinInput,
+      next.updatedAt
+    );
+  } else {
+    db.prepare(
+      `UPDATE settings SET
+        shop_title = ?, show_price = ?, show_progress = ?,
+        hide_soldout = ?, default_show_remaining = ?, updated_at = ?
+       WHERE id = 1`
+    ).run(
+      next.shopTitle || "Dottery",
+      next.showPrice ? 1 : 0,
+      next.showProgress ? 1 : 0,
+      next.hideSoldOut ? 1 : 0,
+      next.defaultShowRemaining ? 1 : 0,
+      next.updatedAt
+    );
+  }
 
   return getSettings(db);
 }
@@ -722,7 +956,7 @@ function aggregateScratchPnL(db, sinceIso, untilIso) {
 }
 
 function buildDashboard(db, options = {}) {
-  const rows = db.prepare(`SELECT * FROM products ORDER BY updated_at DESC`).all();
+  const rows = db.prepare(`SELECT * FROM products ORDER BY sort_order ASC, updated_at DESC`).all();
   let totalDraws = 0;
   let totalScratched = 0;
   let totalRevenue = 0;
@@ -889,9 +1123,13 @@ function buildDashboard(db, options = {}) {
 }
 
 function getScratchSnapshots(db, productId) {
-  const product = db.prepare(`SELECT id, status FROM products WHERE id = ?`).get(productId);
-  if (!product || product.status !== "published") {
+  const product = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  if (!product) {
     return { error: "找不到商品", status: 404 };
+  }
+  const playable = isProductPlayable(product);
+  if (!playable.ok) {
+    return { error: playable.reason, status: 400 };
   }
 
   const rows = db
@@ -917,9 +1155,13 @@ function getScratchSnapshots(db, productId) {
 }
 
 function saveScratchSnapshot(db, productId, slotIndex, payload) {
-  const product = db.prepare(`SELECT id, status FROM products WHERE id = ?`).get(productId);
-  if (!product || product.status !== "published") {
+  const product = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  if (!product) {
     return { error: "找不到商品", status: 404 };
+  }
+  const playable = isProductPlayable(product);
+  if (!playable.ok) {
+    return { error: playable.reason, status: 400 };
   }
 
   const slot = db
@@ -984,12 +1226,16 @@ module.exports = {
   STATUSES,
   THEMES,
   FOIL_PRESETS,
+  DRAW_MODES,
+  SOLDOUT_VISIBILITY,
   nowIso,
   shuffle,
   rowToProduct,
   rowToPrize,
   getPrizes,
   getSlots,
+  getSlotDrafts,
+  saveSlotDrafts,
   getScratchedCount,
   remainingByPrize,
   winningNumbers,
@@ -1001,6 +1247,8 @@ module.exports = {
   normalizePrizeInput,
   computeEconomics,
   validatePublish,
+  validateManualSlots,
+  buildSlotDraftsFromPrizeSpecs,
   publishProduct,
   resetBoard,
   claimSlot,
@@ -1010,7 +1258,13 @@ module.exports = {
   deleteScratchSnapshot,
   getSettings,
   saveSettings,
+  getAdminPin,
   countTopPrizesRemaining,
   buildDashboard,
   computeOptimalCols,
+  getScheduleStatus,
+  isProductPlayable,
+  isProductVisibleInShop,
+  isProductSoldOut,
+  syncScheduledProducts,
 };
