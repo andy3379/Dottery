@@ -6,6 +6,7 @@
     const world = document.getElementById("world");
     const board = document.getElementById("board");
     const backBtn = document.getElementById("backBtn");
+    const fullscreenBtn = document.getElementById("fullscreenBtn");
 
     const state = {
       product: ProductStore.normalizeProduct(options.product),
@@ -656,6 +657,57 @@
       }
     }
 
+    function getFullscreenElement() {
+      return (
+        document.fullscreenElement ||
+        document.webkitFullscreenElement ||
+        null
+      );
+    }
+
+    function canUseFullscreen() {
+      const el = document.documentElement;
+      return Boolean(
+        el.requestFullscreen ||
+          el.webkitRequestFullscreen ||
+          el.webkitRequestFullScreen
+      );
+    }
+
+    function isFullscreen() {
+      return Boolean(getFullscreenElement());
+    }
+
+    function syncFullscreenButton() {
+      if (!fullscreenBtn) return;
+      const active = isFullscreen();
+      fullscreenBtn.classList.toggle("is-active", active);
+      fullscreenBtn.setAttribute("aria-label", active ? "exit" : "fullscreen");
+    }
+
+    async function toggleFullscreen() {
+      if (!canUseFullscreen()) return;
+      try {
+        if (isFullscreen()) {
+          if (document.exitFullscreen) {
+            await document.exitFullscreen();
+          } else if (document.webkitExitFullscreen) {
+            document.webkitExitFullscreen();
+          }
+        } else {
+          const el = document.documentElement;
+          if (el.requestFullscreen) {
+            await el.requestFullscreen();
+          } else if (el.webkitRequestFullscreen) {
+            el.webkitRequestFullscreen();
+          } else if (el.webkitRequestFullScreen) {
+            el.webkitRequestFullScreen();
+          }
+        }
+      } catch (_) {}
+      syncFullscreenButton();
+    }
+
     function bindEvents() {
       backBtn.addEventListener("click", goBack);
       backBtn.addEventListener("touchend", (event) => {
@@ -666,6 +718,28 @@
         event.preventDefault();
         goBack(event);
       });
+      if (fullscreenBtn && canUseFullscreen()) {
+        fullscreenBtn.hidden = false;
+        syncFullscreenButton();
+        fullscreenBtn.addEventListener("click", (event) => {
+          event.preventDefault();
+          toggleFullscreen();
+        });
+        fullscreenBtn.addEventListener("touchend", (event) => {
+          event.preventDefault();
+          toggleFullscreen();
+        });
+        document.addEventListener("fullscreenchange", () => {
+          syncFullscreenButton();
+          engine.handleResize();
+          syncScratchSizes();
+        });
+        document.addEventListener("webkitfullscreenchange", () => {
+          syncFullscreenButton();
+          engine.handleResize();
+          syncScratchSizes();
+        });
+      }
       window.addEventListener("resize", () => {
         engine.handleResize();
         syncScratchSizes();

@@ -216,14 +216,17 @@ body {
 
 body:has(.viewport.is-scratch) .home-link--float,
 body:has(.viewport.is-scratch) .board-progress,
+body:has(.viewport.is-scratch) .fullscreen-btn,
 body:has(.back-btn:not([hidden])) .home-link--float,
-body:has(.back-btn:not([hidden])) .board-progress {
+body:has(.back-btn:not([hidden])) .board-progress,
+body:has(.back-btn:not([hidden])) .fullscreen-btn {
   display: none;
   pointer-events: none;
 }
 
 body.is-scratch-locked .home-link--float,
-body.is-scratch-locked .board-progress {
+body.is-scratch-locked .board-progress,
+body.is-scratch-locked .fullscreen-btn {
   display: none;
   pointer-events: none;
 }
@@ -668,6 +671,55 @@ body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
 
 .scratch-card__canvas.is-pressed {
   cursor: grabbing;
+}
+
+.fullscreen-btn {
+  position: fixed;
+  top: 1.1rem;
+  right: 1.1rem;
+  z-index: 100;
+  width: 2.5rem;
+  height: 2.5rem;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  color: var(--ink, #171717);
+  background: var(--glass-bg, rgba(255, 255, 255, 0.45));
+  backdrop-filter: blur(18px) saturate(180%);
+  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
+  box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
+  border-radius: 50%;
+  cursor: pointer;
+  pointer-events: auto;
+  touch-action: manipulation;
+  transition: transform 0.2s ease;
+}
+
+.fullscreen-btn:hover {
+  transform: scale(1.05);
+}
+
+.fullscreen-btn[hidden] {
+  display: none;
+}
+
+.fullscreen-btn svg {
+  width: 1.05rem;
+  height: 1.05rem;
+  grid-area: 1 / 1;
+}
+
+.fullscreen-btn__exit {
+  display: none;
+}
+
+.fullscreen-btn.is-active .fullscreen-btn__enter {
+  display: none;
+}
+
+.fullscreen-btn.is-active .fullscreen-btn__exit {
+  display: block;
 }
 
 .back-btn {
