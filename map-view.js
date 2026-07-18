@@ -7,9 +7,11 @@
     const board = document.getElementById("board");
     const backBtn = document.getElementById("backBtn");
     const fullscreenBtn = document.getElementById("fullscreenBtn");
+    const product = ProductStore.normalizeProduct(options.product);
 
     const state = {
-      product: ProductStore.normalizeProduct(options.product),
+      product,
+      slotByIndex: new Map((product.slots || []).map((slot) => [slot.slotIndex, slot])),
       mode: "navigate",
       selectedIndex: null,
       isAnimating: false,
@@ -19,6 +21,8 @@
       scratchSnapshots: new Map(),
       residueThumbs: new Map(),
       claims: new Map(),
+      zoomCueTimer: 0,
+      lastFlushTime: 0,
       onSlotRevealed: options.onSlotRevealed || null,
       onSlotClaimed: options.onSlotClaimed || null,
     };
@@ -52,9 +56,12 @@
       const number = claim?.number ?? slotData?.number;
       handle.slot.classList.add("is-opened", "is-visited");
       handle.preview.hidden = true;
+      handle.numberEl.textContent = number == null ? "" : String(number);
 
       const snap = state.scratchSnapshots.get(index);
-      const scratchCard = ensureScratchCard(index);
+      const scratchCard = state.scratchCards.get(index);
+      handle.numberEl.hidden = Boolean(scratchCard);
+      if (!scratchCard) return;
       await scratchCard.resize();
 
       if (scratchCard.isSealed()) {
@@ -70,17 +77,6 @@
       if (sealed) {
         persistSnapshot(index, sealed, snapshotMeta(index, true));
       }
-    }
-
-    async function syncAllOpenedSlots() {
-      const indices = new Set();
-      state.claims.forEach((claim, index) => {
-        if (claim.scratched) indices.add(index);
-      });
-      (state.product.slots || []).forEach((slotData) => {
-        if (slotData.scratched) indices.add(slotData.slotIndex);
-      });
-      await Promise.all([...indices].map((index) => finalizeOpenedSlot(index)));
     }
 
     function parkScratchResidue(index) {
@@ -194,17 +190,8 @@
       return thumb || null;
     }
 
-    function getReturnCamera(index) {
-      const snap = index != null ? state.scratchSnapshots.get(index) : null;
-      const claim = index != null ? state.claims.get(index) : null;
-      const slotData = index != null ? getSlotData(index) : null;
-      const isOpened = Boolean(
-        (claim && claim.scratched) || (slotData && slotData.scratched)
-      );
-      if (snap && !isOpened) {
-        return engine.getSlotAlignCamera(index);
-      }
-      return engine.getNavigateSnapshot();
+    function getReturnCamera(_index) {
+      return engine.getFitAllCamera();
     }
 
     let popstateHandler = null;
@@ -278,7 +265,7 @@
     }
 
     function getSlotData(index) {
-      return (state.product.slots || []).find((slot) => slot.slotIndex === index);
+      return state.slotByIndex.get(index);
     }
 
     function getSlotDataForEngine(index) {
@@ -311,6 +298,8 @@
       if (!snap) return;
       state.scratchSnapshots.set(index, snap);
       invalidateResidueThumb(index);
+      engine.markSlotDirty(index);
+      if (isSlotOpened(index)) return;
       if (window.ScratchPersist) {
         ScratchPersist.saveSlot(
           state.product.id,
@@ -319,7 +308,6 @@
           meta || snapshotMeta(index)
         );
       }
-      engine.markSlotDirty(index);
     }
 
     async function hydratePersistedSnapshots() {
@@ -343,32 +331,14 @@
       });
     }
 
-    async function syncPersistedVisitedSlots() {
-      const tasks = [];
-      state.scratchSnapshots.forEach((snap, index) => {
-        const slotData = getSlotData(index);
-        const claim = state.claims.get(index);
-        const isOpened = Boolean(
-          (slotData && slotData.scratched) || (claim && claim.scratched)
-        );
-        if (isOpened) return;
-        const handle = engine.getSlotHandle(index);
-        if (!handle) return;
-        tasks.push(restoreSlotVisual(index, handle));
-      });
-      await Promise.all(tasks);
-    }
-
     function flushAllSnapshots() {
+      const now = performance.now();
+      if (now - state.lastFlushTime < 250) return;
+      state.lastFlushTime = now;
       state.scratchCards.forEach((scratchCard, index) => {
         const snap = scratchCard.exportScratchState?.();
         if (snap) {
           persistSnapshot(index, snap, snapshotMeta(index, scratchCard.isSealed?.()));
-        }
-      });
-      state.scratchSnapshots.forEach((snap, index) => {
-        if (!state.scratchCards.has(index)) {
-          persistSnapshot(index, snap, snapshotMeta(index));
         }
       });
       if (window.ScratchPersist) {
@@ -454,6 +424,7 @@
         });
       }
       state.product.slots = slots;
+      state.slotByIndex.set(index, existing || slots[slots.length - 1]);
       state.product.remaining = result.remaining || state.product.remaining;
       state.product.scratchedCount = result.scratchedCount;
       state.product.remainingDraws = result.remainingDraws;
@@ -588,16 +559,48 @@
       }
     }
 
+    function showZoomCue(index) {
+      const point = engine.getSlotScreenPoint(index);
+      const x = clamp(point.x, 24, Math.max(24, viewport.clientWidth - 24));
+      const y = clamp(point.y, 24, Math.max(24, viewport.clientHeight - 24));
+
+      clearTimeout(state.zoomCueTimer);
+      viewport.classList.remove("is-zoom-required");
+      viewport.style.setProperty("--zoom-cue-x", `${x}px`);
+      viewport.style.setProperty("--zoom-cue-y", `${y}px`);
+      void viewport.offsetWidth;
+      viewport.classList.add("is-zoom-required");
+      state.zoomCueTimer = window.setTimeout(() => {
+        viewport.classList.remove("is-zoom-required");
+      }, 1100);
+    }
+
+    function clamp(value, min, max) {
+      return Math.max(min, Math.min(max, value));
+    }
+
     async function enterScratch(index) {
       if (state.isAnimating || state.mode === "scratch" || state.revealing) return;
+      if (!engine.canEnterScratch()) {
+        state.isAnimating = true;
+        showZoomCue(index);
+        try {
+          await engine.zoomTowardSlot(index, 3, true);
+        } finally {
+          state.isAnimating = false;
+        }
+        return;
+      }
 
+      clearTimeout(state.zoomCueTimer);
+      viewport.classList.remove("is-zoom-required");
       state.scratchCommitRequired = false;
       state.isAnimating = true;
       state.selectedIndex = index;
       engine.saveNavigateSnapshot();
 
       engine.getSlotHandle(index);
-      await engine.flyToSlotDetail(index);
+      await engine.flyTo(engine.getDetailCamera(index), false);
 
       engine.setScratchMode(index);
       state.mode = "scratch";
@@ -649,12 +652,74 @@
             }
           }
         }
-        await syncAllOpenedSlots();
         syncScratchSizes();
       } finally {
         state.isAnimating = false;
         engine.scheduleRender();
       }
+    }
+
+    function getOpenableSlotIndices() {
+      const indices = [];
+      const count = Number(state.product.slotCount) || 0;
+      for (let index = 0; index < count; index++) {
+        if (!isSlotOpened(index)) indices.push(index);
+      }
+      return indices;
+    }
+
+    function hasOpenableSlots() {
+      return getOpenableSlotIndices().length > 0;
+    }
+
+    async function transitionToScratch(nextIndex) {
+      if (state.isAnimating || state.revealing) return;
+      if (nextIndex == null || nextIndex < 0) return;
+      if (isSlotOpened(nextIndex)) return;
+
+      if (state.mode !== "scratch") {
+        await enterScratch(nextIndex);
+        return;
+      }
+      if (nextIndex === state.selectedIndex) return;
+      if (!canLeaveScratch() && !isSlotOpened(state.selectedIndex)) return;
+
+      state.isAnimating = true;
+      const prev = state.selectedIndex;
+
+      try {
+        if (prev !== null) {
+          await sealScratchResidue(prev);
+          deactivateScratch(prev);
+          await finalizeOpenedSlot(prev);
+        }
+
+        state.selectedIndex = nextIndex;
+        engine.getSlotHandle(nextIndex);
+        await engine.flyToSlotDetail(nextIndex);
+        engine.setScratchMode(nextIndex);
+        state.mode = "scratch";
+        await activateScratch(nextIndex);
+        syncScratchLockUI();
+        backBtn.hidden = false;
+        syncScratchSizes();
+      } finally {
+        state.isAnimating = false;
+        engine.scheduleRender();
+      }
+    }
+
+    async function enterRandomScratch() {
+      const candidates = getOpenableSlotIndices().filter(
+        (index) => index !== state.selectedIndex
+      );
+      if (!candidates.length) {
+        await goBack();
+        return false;
+      }
+      const index = candidates[Math.floor(Math.random() * candidates.length)];
+      await transitionToScratch(index);
+      return true;
     }
 
     function getFullscreenElement() {
@@ -710,22 +775,10 @@
 
     function bindEvents() {
       backBtn.addEventListener("click", goBack);
-      backBtn.addEventListener("touchend", (event) => {
-        if (!canLeaveScratch()) {
-          event.preventDefault();
-          return;
-        }
-        event.preventDefault();
-        goBack(event);
-      });
       if (fullscreenBtn && canUseFullscreen()) {
         fullscreenBtn.hidden = false;
         syncFullscreenButton();
         fullscreenBtn.addEventListener("click", (event) => {
-          event.preventDefault();
-          toggleFullscreen();
-        });
-        fullscreenBtn.addEventListener("touchend", (event) => {
           event.preventDefault();
           toggleFullscreen();
         });
@@ -772,19 +825,13 @@
       document.documentElement.dataset.boardTheme = theme;
     }
 
-    async function sealOpenedSlots() {
-      await syncAllOpenedSlots();
-      syncScratchSizes();
-    }
-
     function primeClaims() {
       state.claims = new Map();
       state.scratchCards.clear();
       state.scratchSnapshots.clear();
       state.residueThumbs.clear();
-      (state.product.slots || []).forEach((slotData) => {
+      state.slotByIndex.forEach((slotData) => {
         if (!slotData.scratched) return;
-        engine.markSlotDirty(slotData.slotIndex);
         state.claims.set(slotData.slotIndex, {
           slotIndex: slotData.slotIndex,
           number: slotData.number,
@@ -800,8 +847,6 @@
 
     async function bootstrapVisualState() {
       await hydratePersistedSnapshots();
-      await sealOpenedSlots();
-      await syncPersistedVisitedSlots();
       syncScratchSizes();
       engine.scheduleRender();
     }
@@ -824,6 +869,9 @@
       }
 
       state.product = ProductStore.normalizeProduct(rawProduct);
+      state.slotByIndex = new Map(
+        (state.product.slots || []).map((slot) => [slot.slotIndex, slot])
+      );
       state.mode = "navigate";
       state.selectedIndex = null;
       state.scratchCards.clear();
@@ -842,6 +890,9 @@
       mount,
       loadProduct,
       getProduct: () => ({ ...state.product }),
+      exitScratch: goBack,
+      enterRandomScratch,
+      hasOpenableSlots,
     };
   }
 

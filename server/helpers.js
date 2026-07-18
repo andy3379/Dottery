@@ -62,6 +62,7 @@ function rowToProduct(row) {
     name: row.name,
     description: row.description,
     coverImage: row.cover_image,
+    detailImage: row.detail_image || "",
     price: row.price,
     category: row.category,
     totalDraws: row.total_draws,
@@ -189,13 +190,19 @@ function getScratchedCount(db, productId) {
   return row ? row.count : 0;
 }
 
-function prizeNumberMap(db, productId) {
+function prizeNumberMap(db, productId, options = {}) {
+  const unscratchedOnly = Boolean(options.unscratchedOnly);
   const rows = db
     .prepare(
-      `SELECT s.number, s.prize_id
-       FROM slots s
-       WHERE s.product_id = ?
-       ORDER BY s.number ASC`
+      unscratchedOnly
+        ? `SELECT s.number, s.prize_id
+           FROM slots s
+           WHERE s.product_id = ? AND s.scratched = 0
+           ORDER BY s.number ASC`
+        : `SELECT s.number, s.prize_id
+           FROM slots s
+           WHERE s.product_id = ?
+           ORDER BY s.number ASC`
     )
     .all(productId);
   const map = new Map();
@@ -207,7 +214,7 @@ function prizeNumberMap(db, productId) {
 }
 
 function remainingByPrize(db, productId) {
-  const numberMap = prizeNumberMap(db, productId);
+  const numberMap = prizeNumberMap(db, productId, { unscratchedOnly: true });
   return db
     .prepare(
       `SELECT p.id, p.grade, p.name, p.image, p.quantity, p.is_last_one,
@@ -1171,7 +1178,14 @@ function saveScratchSnapshot(db, productId, slotIndex, payload) {
     return { error: "找不到格子", status: 404 };
   }
   if (slot.scratched) {
-    return { error: "格子已刮開", status: 400 };
+    deleteScratchSnapshot(db, productId, slotIndex);
+    return {
+      result: {
+        slotIndex,
+        skipped: true,
+        scratched: true,
+      },
+    };
   }
 
   const width = Number(payload.width);

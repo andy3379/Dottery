@@ -9,20 +9,27 @@
     const revealImage = document.getElementById("revealImage");
     const revealGrade = document.getElementById("revealGrade");
     const revealName = document.getElementById("revealName");
-    const revealClose = document.getElementById("revealClose");
+    const revealBack = document.getElementById("revealBack");
+    const revealNext = document.getElementById("revealNext");
     const boardProgress = document.getElementById("boardProgress");
     const boardPrizePanel = document.getElementById("boardPrizePanel");
     const boardPrizeHead = document.getElementById("boardPrizeHead");
     const boardPrizeList = document.getElementById("boardPrizeList");
 
     let product = options.product;
+    let revealBusy = false;
 
-    function formatPct(ratio) {
-      const pct = ratio * 100;
-      if (pct >= 10) return `${Math.round(pct)}%`;
-      if (pct >= 1) return `${pct.toFixed(1)}%`;
-      if (pct > 0) return `${pct.toFixed(2)}%`;
-      return "0%";
+    function formatPctLabel(ratio) {
+      if (!ratio || ratio <= 0) return "0%";
+      const raw = (ratio * 100).toFixed(3);
+      const trimmed = raw.replace(/\.?0+$/, "");
+      return `${trimmed}%`;
+    }
+
+    function allocatePctLabels(rows) {
+      rows.forEach((row) => {
+        row.pctLabel = formatPctLabel(row.stockRatio);
+      });
     }
 
     function renderProgress() {
@@ -59,11 +66,15 @@
     }
 
     function numbersForPrize(prizeId) {
+      const winning = product.winningNumbers || [];
+      const forPrize = winning.filter((item) => item.prizeId === prizeId);
+      if (forPrize.length) {
+        return forPrize
+          .filter((item) => !item.scratched)
+          .map((item) => item.number);
+      }
       const fromRemaining = (product.remaining || []).find((item) => item.id === prizeId);
-      if (fromRemaining?.numbers?.length) return fromRemaining.numbers;
-      return (product.winningNumbers || [])
-        .filter((item) => item.prizeId === prizeId)
-        .map((item) => item.number);
+      return fromRemaining?.numbers?.length ? fromRemaining.numbers : [];
     }
 
     function buildPrizeRows() {
@@ -77,16 +88,17 @@
         const quantity = Math.max(0, Number(item.quantity) || 0);
         const left = Math.max(0, Number(item.remaining) || 0);
         const ratio = remainingDraws > 0 ? left / remainingDraws : 0;
+        const stockRatio = quantity > 0 ? left / quantity : 0;
         const fallback = prizeMap[item.id];
         rows.push({
           grade: item.grade || fallback?.grade || "",
           name: item.name || fallback?.name || "",
           image: item.image || fallback?.image || "",
-          numbers: item.numbers?.length ? item.numbers : numbersForPrize(item.id),
+          numbers: numbersForPrize(item.id),
           quantity,
           left,
           ratio,
-          stockRatio: quantity > 0 ? left / quantity : 0,
+          stockRatio,
         });
       });
 
@@ -105,6 +117,7 @@
         });
       }
 
+      allocatePctLabels(rows);
       return rows;
     }
 
@@ -168,7 +181,7 @@
 
         const prob = document.createElement("span");
         prob.className = "board-prize__prob";
-        prob.textContent = formatPct(row.ratio);
+        prob.textContent = row.pctLabel;
         top.appendChild(prob);
 
         body.appendChild(top);
@@ -177,6 +190,10 @@
         if (ranges.length) {
           const numbers = document.createElement("div");
           numbers.className = "board-prize__numbers";
+          const numLabel = document.createElement("span");
+          numLabel.className = "board-prize__num-label";
+          numLabel.textContent = "中獎號碼:";
+          numbers.appendChild(numLabel);
           const maxChips = 8;
           const visible = ranges.length > maxChips ? ranges.slice(0, maxChips - 1) : ranges;
           visible.forEach((range) => {
@@ -199,7 +216,7 @@
 
         const frac = document.createElement("span");
         frac.className = "board-prize__frac";
-        frac.textContent = `${row.left}/${row.quantity}`;
+        frac.textContent = `剩餘: ${row.left}/${row.quantity}`;
         fracRow.appendChild(frac);
 
         const track = document.createElement("div");
@@ -219,11 +236,22 @@
       window.dispatchEvent(new Event("resize"));
     }
 
+    function syncRevealActions() {
+      if (!revealNext) return;
+      const canNext =
+        typeof options.canRevealNext === "function"
+          ? options.canRevealNext()
+          : Math.max(0, Number(product.remainingDraws) || 0) > 0;
+      revealNext.disabled = !canNext;
+      revealNext.hidden = !canNext;
+    }
+
     function closeReveal() {
       if (!revealModal) return;
       revealModal.hidden = true;
       if (revealFx) revealFx.replaceChildren();
       if (revealCard) revealCard.className = "reveal-modal__card";
+      revealBusy = false;
     }
 
     function showReveal(result) {
@@ -249,7 +277,9 @@
       }
 
       revealCard.className = `reveal-modal__card level-${level}`;
+      syncRevealActions();
       revealModal.hidden = false;
+      revealBusy = false;
       ScratchEffects.celebrate(revealFx, level);
 
       if (result.lastOneAwarded) {
@@ -273,12 +303,36 @@
       }
     }
 
-    if (revealClose) {
-      revealClose.addEventListener("click", closeReveal);
+    async function handleRevealBack() {
+      if (revealBusy || !revealModal || revealModal.hidden) return;
+      revealBusy = true;
+      closeReveal();
+      if (typeof options.onRevealBack === "function") {
+        await options.onRevealBack();
+      }
+      revealBusy = false;
+    }
+
+    async function handleRevealNext() {
+      if (revealBusy || !revealModal || revealModal.hidden) return;
+      if (revealNext && revealNext.disabled) return;
+      revealBusy = true;
+      closeReveal();
+      if (typeof options.onRevealNext === "function") {
+        await options.onRevealNext();
+      }
+      revealBusy = false;
+    }
+
+    if (revealBack) {
+      revealBack.addEventListener("click", handleRevealBack);
+    }
+    if (revealNext) {
+      revealNext.addEventListener("click", handleRevealNext);
     }
     if (revealModal) {
       revealModal.addEventListener("click", (event) => {
-        if (event.target === revealModal) closeReveal();
+        if (event.target === revealModal) handleRevealBack();
       });
     }
 
@@ -292,7 +346,7 @@
     renderProgress();
     renderPrizePanel();
 
-    return { update, showReveal, render: renderProgress };
+    return { update, showReveal, closeReveal, render: renderProgress };
   }
 
   window.BoardInfo = {
