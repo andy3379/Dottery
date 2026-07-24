@@ -331,6 +331,29 @@
           const url = await uploadFile(file);
           img.src = url;
           img.style.display = "";
+          const iconEl = wrap.querySelector(".upload-dropzone__icon");
+          if (iconEl) iconEl.remove();
+          if (!img.parentElement) wrap.appendChild(img);
+          if (!disabled && !wrap.querySelector(".upload-dropzone__clear")) {
+            wrap.appendChild(
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "chip upload-dropzone__clear",
+                  onClick: (e) => {
+                    e.stopPropagation();
+                    img.removeAttribute("src");
+                    img.style.display = "none";
+                    onChange("");
+                    notifyProductEdited();
+                    render();
+                  },
+                },
+                "×"
+              )
+            );
+          }
           onChange(url);
           notifyProductEdited();
         } catch (error) {
