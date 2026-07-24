@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Dottery">
+  <rect width="512" height="512" rx="118" fill="#EEF0F6"/>
+  <path fill="#15151A" d="M150 112h128c86.5 0 142 54.5 142 144s-55.5 144-142 144H150V112zm78 70v148h50c49.5 0 78-28.5 78-74s-28.5-74-78-74h-50z"/>
+  <circle cx="300" cy="256" r="34" fill="#2F5FE0"/>
+</svg>

@@ -643,16 +643,18 @@
       engine.saveNavigateSnapshot();
 
       engine.getSlotHandle(index);
-      await engine.flyTo(engine.getDetailCamera(index), false);
-
       engine.setScratchMode(index);
       state.mode = "scratch";
-      await activateScratch(index);
-
-      state.isAnimating = false;
-      syncScratchLockUI();
       backBtn.hidden = false;
+      syncScratchLockUI();
+      engine.handleResize();
+      await engine.flyTo(engine.getDetailCamera(index), false);
+
+      await activateScratch(index);
+      await new Promise((resolve) => requestAnimationFrame(resolve));
+      await new Promise((resolve) => requestAnimationFrame(resolve));
       syncScratchSizes();
+      state.isAnimating = false;
     }
 
     async function goBack(event) {
@@ -739,12 +741,14 @@
 
         state.selectedIndex = nextIndex;
         engine.getSlotHandle(nextIndex);
-        await engine.flyToSlotDetail(nextIndex);
         engine.setScratchMode(nextIndex);
         state.mode = "scratch";
-        await activateScratch(nextIndex);
-        syncScratchLockUI();
         backBtn.hidden = false;
+        syncScratchLockUI();
+        engine.handleResize();
+        await engine.flyToSlotDetail(nextIndex);
+        await activateScratch(nextIndex);
+        await new Promise((resolve) => requestAnimationFrame(resolve));
         syncScratchSizes();
       } finally {
         state.isAnimating = false;
@@ -827,45 +831,96 @@
       if (fullscreenBtn && canUseFullscreen()) {
         fullscreenBtn.hidden = false;
         syncFullscreenButton();
-        fullscreenBtn.addEventListener("click", (event) => {
-          event.preventDefault();
-          toggleFullscreen();
-        });
-        document.addEventListener("fullscreenchange", () => {
-          syncFullscreenButton();
-          engine.handleResize();
-          syncScratchSizes();
-        });
-        document.addEventListener("webkitfullscreenchange", () => {
-          syncFullscreenButton();
-          engine.handleResize();
-          syncScratchSizes();
-        });
+        fullscreenBtn.addEventListener("click", onFullscreenClick);
+        document.addEventListener("fullscreenchange", onFullscreenChange);
+        document.addEventListener("webkitfullscreenchange", onFullscreenChange);
       }
-      window.addEventListener("resize", () => {
+      window.addEventListener("resize", onWindowResize);
+      window.addEventListener("pagehide", flushAllSnapshots);
+      window.addEventListener("beforeunload", onBeforeUnload);
+      window.addEventListener("dottery:before-page-leave", flushAllSnapshots);
+      document.addEventListener("click", onShopLinkBlock, true);
+    }
+
+    function onFullscreenClick(event) {
+      event.preventDefault();
+      toggleFullscreen();
+    }
+
+    function onFullscreenChange() {
+      syncFullscreenButton();
+      scheduleBoardLayout();
+    }
+
+    function onWindowResize() {
+      scheduleBoardLayout();
+    }
+
+    let layoutRaf = 0;
+    let layoutSettleTimer = 0;
+
+    function scheduleBoardLayout() {
+      if (layoutRaf) return;
+      layoutRaf = requestAnimationFrame(() => {
+        layoutRaf = 0;
         engine.handleResize();
         syncScratchSizes();
       });
-      window.addEventListener("pagehide", flushAllSnapshots);
-      window.addEventListener("beforeunload", (event) => {
-        flushAllSnapshots();
-        if (state.scratchCommitRequired) {
-          event.preventDefault();
-          event.returnValue = "";
-        }
+      window.clearTimeout(layoutSettleTimer);
+      layoutSettleTimer = window.setTimeout(() => {
+        layoutSettleTimer = 0;
+        engine.handleResize();
+        syncScratchSizes();
+      }, 140);
+    }
+
+    function onBeforeUnload(event) {
+      flushAllSnapshots();
+      if (state.scratchCommitRequired) {
+        event.preventDefault();
+        event.returnValue = "";
+      }
+    }
+
+    function onShopLinkBlock(event) {
+      if (!state.scratchCommitRequired) return;
+      const link = event.target.closest('a[href="/shop"], a[href="index.html"], a[href^="index.html?"]');
+      if (!link) return;
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
+    function destroy() {
+      flushAllSnapshots();
+      releaseScratchCommit();
+      if (layoutRaf) cancelAnimationFrame(layoutRaf);
+      layoutRaf = 0;
+      window.clearTimeout(layoutSettleTimer);
+      layoutSettleTimer = 0;
+      if (state.zoomCueTimer) {
+        window.clearTimeout(state.zoomCueTimer);
+        state.zoomCueTimer = 0;
+      }
+      state.scratchCards.forEach((card) => {
+        try {
+          card.destroy();
+        } catch (_e) {}
       });
-      window.addEventListener("dottery:before-page-leave", flushAllSnapshots);
-      document.addEventListener(
-        "click",
-        (event) => {
-          if (!state.scratchCommitRequired) return;
-          const link = event.target.closest('a[href="/shop"]');
-          if (!link) return;
-          event.preventDefault();
-          event.stopPropagation();
-        },
-        true
-      );
+      state.scratchCards.clear();
+      if (fullscreenBtn && canUseFullscreen()) {
+        fullscreenBtn.removeEventListener("click", onFullscreenClick);
+        document.removeEventListener("fullscreenchange", onFullscreenChange);
+        document.removeEventListener("webkitfullscreenchange", onFullscreenChange);
+      }
+      window.removeEventListener("resize", onWindowResize);
+      window.removeEventListener("pagehide", flushAllSnapshots);
+      window.removeEventListener("beforeunload", onBeforeUnload);
+      window.removeEventListener("dottery:before-page-leave", flushAllSnapshots);
+      document.removeEventListener("click", onShopLinkBlock, true);
+      if (backBtn) backBtn.removeEventListener("click", goBack);
+      document.body.classList.remove("is-scratch-locked", "has-board-prize");
+      delete document.body.dataset.theme;
+      delete document.documentElement.dataset.boardTheme;
     }
 
     function applyTheme() {
@@ -938,6 +993,7 @@
     return {
       mount,
       loadProduct,
+      destroy,
       getProduct: () => ({ ...state.product }),
       exitScratch: goBack,
       enterRandomScratch,

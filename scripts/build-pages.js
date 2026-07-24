@@ -45,6 +45,7 @@ write(
     read("home.html"),
     [
       ['href="/admin"', 'href="admin/"'],
+      ['href="/icons/', 'href="icons/'],
       ['<script src="/page-transition-prep.js"></script>', '<script src="api-shim.js"></script>\n  <script type="module" src="firebase-store.js"></script>\n  <script src="page-transition-prep.js"></script>'],
       ['href="/home.css"', 'href="home.css"'],
       ['href="/page-transition.css"', 'href="page-transition.css"'],
@@ -62,6 +63,7 @@ write(
     read("board.html"),
     [
       ['href="/shop"', 'href="index.html"'],
+      ['href="/icons/', 'href="icons/'],
       ['<script src="/page-transition-prep.js"></script>', '<script src="api-shim.js"></script>\n  <script type="module" src="firebase-store.js"></script>\n  <script src="page-transition-prep.js"></script>'],
       ['href="/styles.css"', 'href="styles.css"'],
       ['href="/page-transition.css"', 'href="page-transition.css"'],
@@ -86,6 +88,7 @@ write(
   replaceAll(
     read("admin/index.html"),
     [
+      ['href="/icons/', 'href="../icons/'],
       ['href="/admin/admin.css"', 'href="admin.css"'],
       [
         '<script src="/admin/economics.js"></script>',
@@ -104,22 +107,9 @@ write(
     read("page-transition.js"),
     [
       [
-        `return target.closest('a[href^="/board"], a[href="/shop"], a[href^="/shop?"]');`,
-        `return target.closest('a[href^="board.html"], a[href^="index.html"]');`,
+        `assets.forEach((asset) => tasks.push(warmFetch(assetUrl(asset))));`,
+        `assets.forEach((asset) => tasks.push(warmFetch(asset)));`,
       ],
-      [
-        `document.querySelectorAll('a[href^="/board"], a[href="/shop"], a[href^="/shop?"]')`,
-        `document.querySelectorAll('a[href^="board.html"], a[href^="index.html"]')`,
-      ],
-      [
-        `if (path === "/board" || path.startsWith("/board/")) return "to-board";`,
-        `if (path === "board.html") return "to-board";`,
-      ],
-      [
-        `if (path === "/shop" || path.startsWith("/shop/")) return "to-shop";`,
-        `if (path === "index.html") return "to-shop";`,
-      ],
-      [`assets.forEach((asset) => tasks.push(warmFetch("/" + asset)));`, `assets.forEach((asset) => tasks.push(warmFetch(asset)));`],
     ],
     "page-transition.js"
   )
@@ -167,7 +157,12 @@ write(
   "map-view.js",
   replaceAll(
     read("map-view.js"),
-    [[`const link = event.target.closest('a[href="/shop"]');`, `const link = event.target.closest('a[href="index.html"]');`]],
+    [
+      [
+        `const link = event.target.closest('a[href="/shop"], a[href="index.html"], a[href^="index.html?"]');`,
+        `const link = event.target.closest('a[href="index.html"], a[href^="index.html?"]');`,
+      ],
+    ],
     "map-view.js"
   )
 );
@@ -203,5 +198,11 @@ write(
 copy("admin/admin.css");
 copy("admin/economics.js");
 copy("admin/prize-number-spec.js");
+
+["icon.svg", "icon-32.png", "icon-180.png", "icon-192.png", "icon-512.png"].forEach((file) => {
+  const target = path.join(OUT, "icons", file);
+  fs.mkdirSync(path.dirname(target), { recursive: true });
+  fs.copyFileSync(path.join(ROOT, "icons", file), target);
+});
 
 process.stdout.write("docs/ 建置完成\n");

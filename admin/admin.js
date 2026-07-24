@@ -653,7 +653,7 @@
     if (!product.lastOne) product.lastOne = blankLastOne();
     if (product.lastOneEnabled == null) {
       product.lastOneEnabled = Boolean(
-        product.lastOne.id || product.lastOne.name || product.lastOne.image
+        product.lastOne.name || product.lastOne.image
       );
     }
     return product;
@@ -1024,7 +1024,7 @@
     }
     state.product.prizes = (state.product.prizes || []).filter((p) => !p.isLastOne);
     state.product.lastOneEnabled = Boolean(
-      state.product.lastOne.id || state.product.lastOne.name || state.product.lastOne.image
+      state.product.lastOne.name || state.product.lastOne.image
     );
     if (!state.product.drawMode) state.product.drawMode = "shuffle";
     if (!state.product.soldoutVisibility) state.product.soldoutVisibility = "show_soldout";
@@ -2893,6 +2893,9 @@
         state.product.lastOne = blankLastOne();
       }
       state.product.prizes = (state.product.prizes || []).filter((p) => !p.isLastOne);
+      state.product.lastOneEnabled = Boolean(
+        state.product.lastOne.name || state.product.lastOne.image
+      );
       if (product.prizeNumberSpecs) {
         state.product.prizeNumberSpecs = product.prizeNumberSpecs;
       }

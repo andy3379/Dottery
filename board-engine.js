@@ -319,7 +319,7 @@
     }
 
     function getViewportPoint(clientX, clientY) {
-      const rect = state.viewportRect || viewport.getBoundingClientRect();
+      const rect = viewport.getBoundingClientRect();
       return { x: clientX - rect.left, y: clientY - rect.top };
     }
 
@@ -381,6 +381,15 @@
       scheduleRender();
     }
 
+    function applyCameraTransformLive(camera) {
+      const prevLod = state.lod;
+      state.camera = clampCamera(camera);
+      world.style.transform = `translate3d(${state.camera.tx}px, ${state.camera.ty}px, 0) scale(${state.camera.scale})`;
+      if (getLodLevel(getVisualSlotSize()) >= 2 && prevLod < 2) {
+        scheduleRender();
+      }
+    }
+
     function setGesturing(active) {
       if (state.gesturing === active) return;
       state.gesturing = active;
@@ -407,7 +416,7 @@
           finish();
         };
         world.addEventListener("transitionend", onEnd);
-        setTimeout(finish, 720);
+        setTimeout(finish, 560);
       });
     }
 
@@ -465,6 +474,19 @@
       return FOIL_FILL[foil.preset] || FOIL_FILL.silver;
     }
 
+    let foilStampRefreshQueued = false;
+
+    function onFoilStampReady() {
+      if (foilStampRefreshQueued) return;
+      foilStampRefreshQueued = true;
+      requestAnimationFrame(() => {
+        foilStampRefreshQueued = false;
+        state.fullBoardDirty = true;
+        state.tiles.forEach((_tile, key) => state.dirtyTiles.add(key));
+        scheduleRender();
+      });
+    }
+
     function drawSlotCircle(ctx, slotData, x, y, radius, index) {
       const scratched = slotData && slotData.scratched;
       const visited = slotData && slotData.visited;
@@ -473,16 +495,34 @@
           ? state.getSlotResidueThumb(index)
           : null;
 
-      ctx.beginPath();
-      ctx.arc(x, y, radius, 0, Math.PI * 2);
       if (scratched) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fillStyle = getOpenedFill();
+        ctx.fill();
       } else if (visited) {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fillStyle = getVisitedFill();
+        ctx.fill();
+      } else if (window.ScratchTexture && typeof ScratchTexture.getStamp === "function") {
+        const stamp = ScratchTexture.getStamp(
+          radius * 2,
+          state.getFoilOptions(),
+          onFoilStampReady
+        );
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
+        ctx.clip();
+        ctx.drawImage(stamp, x - radius, y - radius, radius * 2, radius * 2);
+        ctx.restore();
       } else {
+        ctx.beginPath();
+        ctx.arc(x, y, radius, 0, Math.PI * 2);
         ctx.fillStyle = getFoilFill();
+        ctx.fill();
       }
-      ctx.fill();
 
       if (thumb) {
         ctx.save();
@@ -787,10 +827,21 @@
 
     function render() {
       state.rafId = 0;
-      if (!state.product || state.gesturing) return;
+      if (!state.product) return;
 
       const visualSize = getVisualSlotSize();
       const lod = getLodLevel(visualSize);
+
+      if (state.gesturing) {
+        if (lod >= 2 && state.lod < 2) {
+          state.lod = lod;
+          setLayerVisibility(lod);
+          syncSlotLayer();
+          syncSlotPreviewSizes();
+        }
+        return;
+      }
+
       if (lod !== state.lod) {
         state.lod = lod;
         setLayerVisibility(lod);
@@ -842,6 +893,9 @@
       state.dirtyTiles.clear();
       state.fullBoardDirty = true;
       state.lod = -1;
+      if (window.ScratchTexture && typeof ScratchTexture.clearStampCache === "function") {
+        ScratchTexture.clearStampCache();
+      }
       boardSlots.replaceChildren();
       boardTiles.replaceChildren();
       syncDisplayLayout();
@@ -888,7 +942,7 @@
       const nextScale = clamp(state.camera.scale * factor, getMinScale(), getMaxScale());
       const tx = screenX - before.x * nextScale;
       const ty = screenY - before.y * nextScale;
-      applyCameraTransform({ tx, ty, scale: nextScale }, false);
+      applyCameraTransformLive({ tx, ty, scale: nextScale });
     }
 
     function onWheel(event) {
@@ -949,14 +1003,11 @@
           getMinScale(),
           getMaxScale()
         );
-        applyCameraTransform(
-          {
-            tx: cx - before.x * nextScale,
-            ty: cy - before.y * nextScale,
-            scale: nextScale,
-          },
-          false
-        );
+        applyCameraTransformLive({
+          tx: cx - before.x * nextScale,
+          ty: cy - before.y * nextScale,
+          scale: nextScale,
+        });
         state.tapCandidate = null;
         return;
       }
@@ -970,14 +1021,11 @@
         ) {
           state.tapCandidate = null;
         }
-        applyCameraTransform(
-          {
-            tx: state.panStart.tx + dx,
-            ty: state.panStart.ty + dy,
-            scale: state.camera.scale,
-          },
-          false
-        );
+        applyCameraTransformLive({
+          tx: state.panStart.tx + dx,
+          ty: state.panStart.ty + dy,
+          scale: state.camera.scale,
+        });
       }
     }
 

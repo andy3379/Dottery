@@ -120,17 +120,20 @@ body {
   z-index: -1;
   overflow: hidden;
   pointer-events: none;
+  contain: strict;
+  transform: translateZ(0);
 }
 
 .board-aurora-blob {
   position: absolute;
   border-radius: 50%;
-  filter: blur(80px);
-  opacity: 0.6;
-  will-change: transform;
+  opacity: 0.55;
+  pointer-events: none;
+  contain: strict;
 }
 
 body:has(.viewport.is-gesturing) .board-aurora-blob,
+body:has(.world.is-animating) .board-aurora-blob,
 body:has(.board-prize:hover) .board-aurora-blob,
 body:has(.board-prize:focus-within) .board-aurora-blob {
   animation-play-state: paused;
@@ -141,7 +144,7 @@ body:has(.board-prize:focus-within) .board-aurora-blob {
   left: -10%;
   width: 55vw;
   height: 55vw;
-  background: radial-gradient(circle at 30% 30%, var(--grad-1), transparent 70%);
+  background: radial-gradient(circle at 30% 30%, var(--grad-1) 0%, transparent 68%);
   animation: board-drift-a 28s ease-in-out infinite;
 }
 
@@ -150,7 +153,7 @@ body:has(.board-prize:focus-within) .board-aurora-blob {
   right: -12%;
   width: 60vw;
   height: 60vw;
-  background: radial-gradient(circle at 60% 60%, var(--grad-2), transparent 72%);
+  background: radial-gradient(circle at 60% 60%, var(--grad-2) 0%, transparent 70%);
   animation: board-drift-b 34s ease-in-out infinite;
 }
 
@@ -176,9 +179,7 @@ body:has(.board-prize:focus-within) .board-aurora-blob {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: var(--glass-bg, rgba(255, 255, 255, 0.45));
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  background: var(--glass-bg-strong, rgba(255, 255, 255, 0.88));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
   box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
   color: var(--ink, #171717);
@@ -217,9 +218,7 @@ html.is-preview .home-link--float {
   min-height: 2.5rem;
   padding: 0 0.95rem;
   border-radius: 999px;
-  background: var(--glass-bg, rgba(255, 255, 255, 0.45));
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  background: var(--glass-bg-strong, rgba(255, 255, 255, 0.88));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
   box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
   color: var(--ink, #171717);
@@ -250,9 +249,7 @@ html.is-preview .home-link--float {
   display: grid;
   place-items: center;
   border-radius: 999px;
-  background: var(--glass-bg, rgba(255, 255, 255, 0.45));
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  background: var(--glass-bg-strong, rgba(255, 255, 255, 0.88));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
   box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
   color: var(--ink, #171717);
@@ -666,16 +663,21 @@ body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
   top: 0;
   left: 0;
   transform-origin: 0 0;
-  will-change: transform;
   backface-visibility: hidden;
 }
 
 .world.is-animating {
-  transition: transform 0.65s cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+  transition: transform 0.5s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
 .viewport.is-gesturing .world.is-animating {
   transition: none;
+  will-change: transform;
+}
+
+.viewport.is-gesturing .world {
+  will-change: transform;
 }
 
 .board {
@@ -814,6 +816,7 @@ body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
   pointer-events: auto;
   overflow: hidden;
   border-radius: 50%;
+  touch-action: none;
 }
 
 .scratch-card {
@@ -882,9 +885,7 @@ body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
   display: grid;
   place-items: center;
   color: var(--ink, #171717);
-  background: var(--glass-bg, rgba(255, 255, 255, 0.45));
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  background: var(--glass-bg-strong, rgba(255, 255, 255, 0.88));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
   box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
   border-radius: 50%;
@@ -932,9 +933,7 @@ body.has-board-prize:has(.back-btn:not([hidden])) .viewport {
   line-height: 1;
   font-weight: 500;
   color: var(--ink, #171717);
-  background: var(--glass-bg, rgba(255, 255, 255, 0.45));
-  backdrop-filter: blur(18px) saturate(180%);
-  -webkit-backdrop-filter: blur(18px) saturate(180%);
+  background: var(--glass-bg-strong, rgba(255, 255, 255, 0.88));
   border: 1px solid var(--glass-border, rgba(255, 255, 255, 0.6));
   box-shadow: var(--glass-shadow), 0 1px 0 rgba(255, 255, 255, 0.4) inset;
   border-radius: 50%;

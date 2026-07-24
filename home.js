@@ -1,6 +1,31 @@
 (function () {
   "use strict";
 
+  if (!document.getElementById("shop")) return;
+
+  const disposers = [];
+  let disposed = false;
+
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    if (metaSwitchTimer) {
+      clearTimeout(metaSwitchTimer);
+      metaSwitchTimer = null;
+    }
+    if (heroAnimClearTimer) {
+      clearTimeout(heroAnimClearTimer);
+      heroAnimClearTimer = null;
+    }
+    while (disposers.length) {
+      try {
+        disposers.pop()();
+      } catch (_e) {}
+    }
+  }
+
+  window.addEventListener("dottery:page-dispose", dispose, { once: true });
+
   const els = {
     searchInput: document.getElementById("searchInput"),
     heroStage: document.getElementById("heroStage"),
@@ -25,6 +50,7 @@
     priceCalcBillCode: document.getElementById("priceCalcBillCode"),
     priceCalcBillAmount: document.getElementById("priceCalcBillAmount"),
     priceCalcBillCount: document.getElementById("priceCalcBillCount"),
+    priceCalcBillSummary: document.getElementById("priceCalcBillSummary"),
     priceCalcBillList: document.getElementById("priceCalcBillList"),
     priceCalcBillActions: document.getElementById("priceCalcBillActions"),
     priceCalcBillCancel: document.getElementById("priceCalcBillCancel"),
@@ -85,10 +111,12 @@
   }
 
   if (els.searchInput) {
-    els.searchInput.addEventListener("input", (e) => {
+    const onSearchInput = (e) => {
       state.query = e.target.value;
       renderHero();
-    });
+    };
+    els.searchInput.addEventListener("input", onSearchInput);
+    disposers.push(() => els.searchInput.removeEventListener("input", onSearchInput));
   }
 
   /* ---------------- Hero coverflow ---------------- */
@@ -585,13 +613,18 @@
     renderHeroStage();
   }
 
-  els.heroPrev.addEventListener("click", () => {
+  function onHeroPrevClick() {
     moveHero(-1);
-  });
+  }
 
-  els.heroNext.addEventListener("click", () => {
+  function onHeroNextClick() {
     moveHero(1);
-  });
+  }
+
+  els.heroPrev.addEventListener("click", onHeroPrevClick);
+  els.heroNext.addEventListener("click", onHeroNextClick);
+  disposers.push(() => els.heroPrev.removeEventListener("click", onHeroPrevClick));
+  disposers.push(() => els.heroNext.removeEventListener("click", onHeroNextClick));
 
   /* --- Hero drag / swipe (mouse, touch, pen via Pointer Events) --- */
 
@@ -656,9 +689,41 @@
     );
   })();
 
-  window.addEventListener("resize", () => {
-    renderHeroStage({ instant: true });
+  let resizeRaf = 0;
+  let resizeSettleTimer = 0;
+
+  function onShopResize() {
+    if (disposed) return;
+    if (resizeRaf) return;
+    resizeRaf = requestAnimationFrame(() => {
+      resizeRaf = 0;
+      if (disposed) return;
+      renderHeroStage({ instant: true });
+    });
+  }
+
+  function scheduleShopLayout() {
+    if (disposed) return;
+    onShopResize();
+    window.clearTimeout(resizeSettleTimer);
+    resizeSettleTimer = window.setTimeout(() => {
+      resizeSettleTimer = 0;
+      if (disposed) return;
+      renderHeroStage({ instant: true });
+    }, 120);
+  }
+
+  window.addEventListener("resize", scheduleShopLayout);
+  disposers.push(() => {
+    window.removeEventListener("resize", scheduleShopLayout);
+    if (resizeRaf) cancelAnimationFrame(resizeRaf);
+    window.clearTimeout(resizeSettleTimer);
   });
+
+  function onFullscreenLayout() {
+    syncShopFullscreenBtn();
+    scheduleShopLayout();
+  }
 
   function getFullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
@@ -705,16 +770,24 @@
 
   if (els.fullscreenBtn && canUseFullscreen()) {
     syncShopFullscreenBtn();
-    els.fullscreenBtn.addEventListener("click", (event) => {
+    const onFsClick = (event) => {
       event.preventDefault();
       enterShopFullscreen();
-    });
-    els.fullscreenBtn.addEventListener("touchend", (event) => {
+    };
+    const onFsTouch = (event) => {
       event.preventDefault();
       enterShopFullscreen();
+    };
+    els.fullscreenBtn.addEventListener("click", onFsClick);
+    els.fullscreenBtn.addEventListener("touchend", onFsTouch);
+    document.addEventListener("fullscreenchange", onFullscreenLayout);
+    document.addEventListener("webkitfullscreenchange", onFullscreenLayout);
+    disposers.push(() => {
+      els.fullscreenBtn.removeEventListener("click", onFsClick);
+      els.fullscreenBtn.removeEventListener("touchend", onFsTouch);
+      document.removeEventListener("fullscreenchange", onFullscreenLayout);
+      document.removeEventListener("webkitfullscreenchange", onFullscreenLayout);
     });
-    document.addEventListener("fullscreenchange", syncShopFullscreenBtn);
-    document.addEventListener("webkitfullscreenchange", syncShopFullscreenBtn);
   }
 
   /* ---------------- Bootstrap ---------------- */
@@ -742,7 +815,40 @@
   function closePriceCalcBill() {
     closePriceCalcPin();
     if (els.priceCalcBill) els.priceCalcBill.hidden = true;
+    if (els.priceCalcBillSummary) {
+      els.priceCalcBillSummary.replaceChildren();
+      els.priceCalcBillSummary.hidden = true;
+    }
     if (els.priceCalcBillList) els.priceCalcBillList.replaceChildren();
+  }
+
+  function buildBillPrizeSummary(items) {
+    const totals = new Map();
+
+    function addPrize(prize) {
+      if (!prize) return;
+      const name = String(prize.name || "").trim() || "—";
+      const grade = String(prize.grade || "").trim();
+      const key = prize.id ? `id:${prize.id}` : `n:${grade}\0${name}`;
+      const existing = totals.get(key);
+      if (existing) {
+        existing.count += 1;
+        return;
+      }
+      totals.set(key, { grade, name, count: 1 });
+    }
+
+    (Array.isArray(items) ? items : []).forEach((item) => {
+      addPrize(item && item.prize);
+      if (item && item.lastOne) addPrize(item.lastOne);
+    });
+
+    return Array.from(totals.values());
+  }
+
+  function formatBillSummaryLine(entry) {
+    const label = entry.grade ? `${entry.grade} ${entry.name}` : entry.name;
+    return `${label} ×${entry.count}`;
   }
 
   function createBillPrizeRow(prize, meta) {
@@ -831,6 +937,7 @@
     if (els.priceCalcPinDots) els.priceCalcPinDots.classList.remove("is-shake");
     if (els.priceCalcPin) els.priceCalcPin.hidden = true;
     if (els.priceCalcBillActions) els.priceCalcBillActions.hidden = false;
+    if (els.priceCalcBillSummary) els.priceCalcBillSummary.hidden = !els.priceCalcBillSummary.childElementCount;
     if (els.priceCalcBillList) els.priceCalcBillList.hidden = false;
   }
 
@@ -840,6 +947,7 @@
     priceCalcPinState.locked = false;
     syncPriceCalcPinDots();
     if (els.priceCalcBillActions) els.priceCalcBillActions.hidden = true;
+    if (els.priceCalcBillSummary) els.priceCalcBillSummary.hidden = true;
     if (els.priceCalcBillList) els.priceCalcBillList.hidden = true;
     if (els.priceCalcPin) els.priceCalcPin.hidden = false;
   }
@@ -909,9 +1017,26 @@
       els.priceCalcBillCount.textContent = `×${Number(receipt.scratchCount) || 0}`;
     }
 
+    const items = Array.isArray(receipt.items) ? receipt.items : [];
+    const summary = buildBillPrizeSummary(items);
+
+    if (els.priceCalcBillSummary) {
+      els.priceCalcBillSummary.replaceChildren();
+      if (summary.length) {
+        summary.forEach((entry) => {
+          const line = document.createElement("div");
+          line.className = "price-calc-bill__summary-line";
+          line.textContent = formatBillSummaryLine(entry);
+          els.priceCalcBillSummary.appendChild(line);
+        });
+        els.priceCalcBillSummary.hidden = false;
+      } else {
+        els.priceCalcBillSummary.hidden = true;
+      }
+    }
+
     if (els.priceCalcBillList) {
       els.priceCalcBillList.replaceChildren();
-      const items = Array.isArray(receipt.items) ? receipt.items : [];
 
       if (!items.length) {
         const empty = document.createElement("div");
@@ -983,47 +1108,63 @@
   }
 
   if (els.priceCalcStart) {
-    els.priceCalcStart.addEventListener("click", () => {
-      openPriceCalcConfirm("start");
-    });
+    const onStart = () => openPriceCalcConfirm("start");
+    els.priceCalcStart.addEventListener("click", onStart);
+    disposers.push(() => els.priceCalcStart.removeEventListener("click", onStart));
   }
 
   if (els.priceCalcEnd) {
-    els.priceCalcEnd.addEventListener("click", () => {
-      openPriceCalcConfirm("end");
-    });
+    const onEnd = () => openPriceCalcConfirm("end");
+    els.priceCalcEnd.addEventListener("click", onEnd);
+    disposers.push(() => els.priceCalcEnd.removeEventListener("click", onEnd));
   }
 
   if (els.priceCalcConfirmCancel) {
     els.priceCalcConfirmCancel.addEventListener("click", closePriceCalcConfirm);
+    disposers.push(() =>
+      els.priceCalcConfirmCancel.removeEventListener("click", closePriceCalcConfirm)
+    );
   }
 
   if (els.priceCalcConfirmOk) {
     els.priceCalcConfirmOk.addEventListener("click", confirmPriceCalcAction);
+    disposers.push(() =>
+      els.priceCalcConfirmOk.removeEventListener("click", confirmPriceCalcAction)
+    );
   }
 
   if (els.priceCalcConfirm) {
-    els.priceCalcConfirm.addEventListener("click", (event) => {
+    const onConfirmBg = (event) => {
       if (event.target === els.priceCalcConfirm) closePriceCalcConfirm();
-    });
+    };
+    els.priceCalcConfirm.addEventListener("click", onConfirmBg);
+    disposers.push(() => els.priceCalcConfirm.removeEventListener("click", onConfirmBg));
   }
 
   if (els.priceCalcBillCancel) {
     els.priceCalcBillCancel.addEventListener("click", closePriceCalcBill);
+    disposers.push(() =>
+      els.priceCalcBillCancel.removeEventListener("click", closePriceCalcBill)
+    );
   }
 
   if (els.priceCalcBillOk) {
     els.priceCalcBillOk.addEventListener("click", confirmPriceCalcBill);
+    disposers.push(() =>
+      els.priceCalcBillOk.removeEventListener("click", confirmPriceCalcBill)
+    );
   }
 
   if (els.priceCalcBill) {
-    els.priceCalcBill.addEventListener("click", (event) => {
+    const onBillBg = (event) => {
       if (event.target === els.priceCalcBill) closePriceCalcBill();
-    });
+    };
+    els.priceCalcBill.addEventListener("click", onBillBg);
+    disposers.push(() => els.priceCalcBill.removeEventListener("click", onBillBg));
   }
 
   if (els.priceCalcPinPad) {
-    els.priceCalcPinPad.addEventListener("click", (event) => {
+    const onPinPad = (event) => {
       const key = event.target.closest("[data-pin]");
       if (!key) return;
       const value = key.getAttribute("data-pin");
@@ -1032,14 +1173,20 @@
         return;
       }
       if (/^\d$/.test(value)) pushPriceCalcPinDigit(value);
-    });
+    };
+    els.priceCalcPinPad.addEventListener("click", onPinPad);
+    disposers.push(() => els.priceCalcPinPad.removeEventListener("click", onPinPad));
   }
 
   if (els.priceCalcPinBack) {
     els.priceCalcPinBack.addEventListener("click", closePriceCalcPin);
+    disposers.push(() =>
+      els.priceCalcPinBack.removeEventListener("click", closePriceCalcPin)
+    );
   }
 
-  document.addEventListener("keydown", (event) => {
+  function onShopKeydown(event) {
+    if (disposed) return;
     if (isPriceCalcPinOpen()) {
       if (event.key >= "0" && event.key <= "9") {
         event.preventDefault();
@@ -1065,11 +1212,14 @@
     }
     if (!els.priceCalcConfirm || els.priceCalcConfirm.hidden) return;
     closePriceCalcConfirm();
-  });
+  }
+
+  document.addEventListener("keydown", onShopKeydown);
+  disposers.push(() => document.removeEventListener("keydown", onShopKeydown));
 
   if (window.PriceCalc) {
     renderPriceCalc(PriceCalc.get());
-    PriceCalc.subscribe(renderPriceCalc);
+    disposers.push(PriceCalc.subscribe(renderPriceCalc));
   }
 
   Promise.all([
@@ -1077,6 +1227,7 @@
     fetch("/api/products").then((res) => res.json()),
   ])
     .then(([settings, data]) => {
+      if (disposed) return;
       if (settings) {
         state.settings.shopTitle = settings.shopTitle || state.settings.shopTitle;
         state.settings.showPrice = settings.showPrice !== false;
@@ -1088,6 +1239,7 @@
       renderHero();
     })
     .catch(() => {
+      if (disposed) return;
       applyBrand();
       renderHero();
     });

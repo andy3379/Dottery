@@ -87,6 +87,7 @@ app.use(cookieParser());
 app.use(sessionMiddleware);
 
 app.use("/uploads", express.static(UPLOADS_DIR));
+app.use("/icons", express.static(path.join(ROOT, "icons")));
 app.use("/api", createPublicRouter(db));
 app.use("/api/admin", createAdminRouter(db));
 

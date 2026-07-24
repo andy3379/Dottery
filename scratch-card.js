@@ -67,7 +67,7 @@
     };
 
     function getDpr() {
-      return Math.min(window.devicePixelRatio || 1, 2);
+      return Math.min(window.devicePixelRatio || 1, 1.5);
     }
 
     function getLocalSize() {
@@ -228,12 +228,13 @@
 
     function getPointerPosition(event) {
       const rect = canvas.getBoundingClientRect();
-      const clientX = event.touches ? event.touches[0].clientX : event.clientX;
-      const clientY = event.touches ? event.touches[0].clientY : event.clientY;
-      const cssX = clientX - rect.left;
-      const cssY = clientY - rect.top;
+      const src = event.touches && event.touches[0] ? event.touches[0] : event;
+      const clientX = src.clientX;
+      const clientY = src.clientY;
       const width = Math.max(rect.width, 1);
       const height = Math.max(rect.height, 1);
+      const cssX = clientX - rect.left;
+      const cssY = clientY - rect.top;
 
       return {
         x: (cssX / width) * canvas.width,
@@ -374,11 +375,10 @@
       const pos = getPointerPosition(event);
       if (!isInsideCircle(pos.x, pos.y)) return;
 
-      canvas.setPointerCapture(event.pointerId);
+      try {
+        canvas.setPointerCapture(event.pointerId);
+      } catch (_error) {}
       canvas.classList.add("is-pressed");
-
-      ensureEffects();
-      await audio.start();
 
       state.isDrawing = true;
       state.lastMoveTime = performance.now();
@@ -388,9 +388,11 @@
       state.lastCssY = pos.cssY;
 
       scratchAt(pos.x, pos.y);
+      ensureEffects();
       emitScratchFeedback(pos.cssX, pos.cssY, 0, -1, 4);
-      haptics.tick(4);
+      if (haptics) haptics.tick(4);
       maybeReveal(false);
+      void audio.start();
     }
 
     function onPointerMove(event) {

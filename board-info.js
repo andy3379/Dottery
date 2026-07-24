@@ -28,7 +28,7 @@
 
     function allocatePctLabels(rows) {
       rows.forEach((row) => {
-        row.pctLabel = formatPctLabel(row.stockRatio);
+        row.pctLabel = formatPctLabel(row.ratio);
       });
     }
 

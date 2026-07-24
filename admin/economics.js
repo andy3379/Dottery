@@ -60,33 +60,40 @@ function expectedCostThroughDraws(drawSchedule, expectedDraws) {
   return total;
 }
 
+function resolveSellThroughK(totalDraws, majorCount, hasLastOne) {
+  if (hasLastOne) return 1;
+  const total = Math.max(1, Math.floor(Number(totalDraws)) || 1);
+  const majors = Math.max(0, Math.floor(Number(majorCount)) || 0);
+  if (!majors) return 0;
+  return (total + 1) / ((majors + 1) * total);
+}
+
 function computeJackpotStopEconomics(params) {
   const totalDraws = Math.max(1, Math.floor(Number(params.N)) || 1);
   const price = Math.max(0, Number(params.P) || 0);
   const majorCount = Math.max(0, Math.floor(Number(params.m)) || 0);
+  const hasLastOne = Boolean(params.hasLastOne);
   const targetMarginRate = Math.min(
     0.9,
     Math.max(0, Number(params.targetMarginRate) || 0)
   );
   const drawSchedule = params.drawSchedule || [];
   const invalidMajorCount = majorCount > totalDraws;
-  const expectedStopDraw =
-    majorCount > 0
-      ? (majorCount * (totalDraws + 1)) / (majorCount + 1)
-      : 0;
+  const K = resolveSellThroughK(totalDraws, majorCount, hasLastOne);
+  const expectedStopDraw = K * totalDraws;
   const expectedRevenue = price * expectedStopDraw;
   const expectedCost =
     params.expectedCost != null
       ? Math.max(0, Number(params.expectedCost) || 0)
-      : expectedCostThroughDraws(drawSchedule, expectedStopDraw);
+      : hasLastOne && params.totalCost != null
+        ? Math.max(0, Number(params.totalCost) || 0)
+        : expectedCostThroughDraws(drawSchedule, expectedStopDraw);
   const expectedProfit = expectedRevenue - expectedCost;
   const expectedProfitRate =
     expectedRevenue > 0 ? expectedProfit / expectedRevenue : 0;
   const marginDenominator = 1 - targetMarginRate;
   const suggestedPrice =
-    majorCount > 0 &&
-    expectedStopDraw > 0 &&
-    marginDenominator > 0
+    expectedStopDraw > 0 && marginDenominator > 0
       ? expectedCost / (expectedStopDraw * marginDenominator)
       : 0;
   const priceDelta = price - suggestedPrice;
@@ -95,6 +102,8 @@ function computeJackpotStopEconomics(params) {
     N: totalDraws,
     P: price,
     m: majorCount,
+    K,
+    hasLastOne,
     targetMarginRate,
     expectedStopDraw,
     expectedRevenue,
@@ -114,9 +123,9 @@ function resolveLastOne(product, prizes) {
   const enabled =
     enabledFromProduct != null
       ? Boolean(enabledFromProduct)
-      : Boolean(prizes.some((p) => p.isLastOne && (p.name || p.image || p.id)));
+      : Boolean(prizes.some((p) => p.isLastOne && (p.name || p.image)));
   const active =
-    enabled && lastOneInput && (lastOneInput.name || lastOneInput.image || lastOneInput.id);
+    enabled && lastOneInput && (lastOneInput.name || lastOneInput.image);
   return active ? lastOneInput : null;
 }
 
@@ -149,13 +158,20 @@ function computeEconomics(product, prizesInput, options) {
   const regularEvPerDraw = regularCost / totalDraws;
 
   const lastOneInput = resolveLastOne(product, prizes);
+  const hasLastOne =
+    product.lastOneEnabled != null
+      ? Boolean(product.lastOneEnabled)
+      : Boolean(lastOneInput);
   let lastOne = null;
   let lastOneCost = 0;
-  if (lastOneInput) {
-    lastOneCost = Math.max(0, Number(lastOneInput.cost) || 0);
+  const lastOneSource =
+    lastOneInput ||
+    (hasLastOne ? product.lastOne || prizes.find((p) => p.isLastOne) || null : null);
+  if (hasLastOne && lastOneSource) {
+    lastOneCost = Math.max(0, Number(lastOneSource.cost) || 0);
     lastOne = {
-      id: lastOneInput.id || "",
-      name: lastOneInput.name || "",
+      id: lastOneSource.id || "",
+      name: lastOneSource.name || "",
       quantity: 1,
       cost: lastOneCost,
       probability: 1 / totalDraws,
@@ -169,7 +185,7 @@ function computeEconomics(product, prizesInput, options) {
     totalDraws,
     regularCost,
     lastOneCost,
-    Boolean(lastOne)
+    hasLastOne
   );
   const marginByDraw = drawSchedule.map((expectedCost, index) => {
     const draw = index + 1;
@@ -191,12 +207,16 @@ function computeEconomics(product, prizesInput, options) {
   const marginRate = price > 0 ? marginPerDraw / price : 0;
   const totalRevenue = price * totalDraws;
   const majorPrize = resolveMajorPrize(prizes);
+  const topMajorCount = resolveTargetPrizeCount(prizes, "first");
   const stopDrawSchedule = buildDrawCostSchedule(totalDraws, regularCost, 0, false);
   const stopModel = computeJackpotStopEconomics({
     N: totalDraws,
     P: price,
-    m: majorPrize.m,
+    m: topMajorCount,
+    hasLastOne,
     drawSchedule: stopDrawSchedule,
+    totalCost,
+    expectedCost: hasLastOne ? totalCost : undefined,
     targetMarginRate: options?.targetMarginRate ?? 0.3,
   });
 
@@ -226,6 +246,7 @@ function computeEconomics(product, prizesInput, options) {
     suggestedPrice: stopModel.suggestedPrice,
     priceDelta: stopModel.priceDelta,
     expectedStopDraw: stopModel.expectedStopDraw,
+    K: stopModel.K,
   };
 }
 
@@ -438,6 +459,7 @@ if (typeof module !== "undefined" && module.exports) {
     resolveStopTiers,
     resolveStopPrizes,
     resolveMajorPrize,
+    resolveSellThroughK,
     expectedCostThroughDraws,
     computeJackpotStopEconomics,
     computeEconomics,
@@ -459,6 +481,7 @@ if (typeof window !== "undefined") {
     resolveStopTiers,
     resolveStopPrizes,
     resolveMajorPrize,
+    resolveSellThroughK,
     expectedCostThroughDraws,
     computeJackpotStopEconomics,
     computeEconomics,

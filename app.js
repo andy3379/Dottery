@@ -1,9 +1,31 @@
 (function () {
   "use strict";
 
+  if (!document.getElementById("viewport")) return;
+
+  let disposed = false;
+  let mapView = null;
+  let unsubPriceCalc = null;
+
+  function dispose() {
+    if (disposed) return;
+    disposed = true;
+    if (unsubPriceCalc) {
+      unsubPriceCalc();
+      unsubPriceCalc = null;
+    }
+    if (mapView && typeof mapView.destroy === "function") {
+      mapView.destroy();
+    }
+    mapView = null;
+    if (window.Dottery) window.Dottery = null;
+  }
+
+  window.addEventListener("dottery:page-dispose", dispose, { once: true });
+
   ProductStore.loadCurrent()
     .then((product) => {
-      if (!product) return;
+      if (disposed || !product) return;
 
       const detailImage = document.getElementById("boardDetailImage");
       if (detailImage && product.detailImage) {
@@ -16,8 +38,6 @@
         const homeLink = document.querySelector(".home-link");
         if (homeLink) homeLink.hidden = true;
       }
-
-      let mapView = null;
 
       const boardInfo = BoardInfo.create({
         product,
@@ -48,6 +68,7 @@
         if (!root || !window.PriceCalc) return;
 
         function render(session) {
+          if (disposed) return;
           const active = Boolean(session && session.active);
           root.hidden = !active;
           if (!active) return;
@@ -56,12 +77,13 @@
         }
 
         render(PriceCalc.get());
-        PriceCalc.subscribe(render);
+        unsubPriceCalc = PriceCalc.subscribe(render);
       })();
 
       window.Dottery = { product, mapView, boardInfo };
     })
     .catch(() => {
+      if (disposed) return;
       if (new URLSearchParams(window.location.search).get("preview") === "1") {
         return;
       }

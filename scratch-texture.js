@@ -251,12 +251,55 @@
     }
   }
 
+  const stampCache = new Map();
+  const STAMP_CACHE_LIMIT = 12;
+
+  function getStampPixelSize(cssDiameter) {
+    const raw = Math.ceil(Math.max(1, cssDiameter) * getRenderDpr());
+    const bucketed = Math.ceil(raw / 16) * 16;
+    return Math.max(16, Math.min(128, bucketed));
+  }
+
+  function getStamp(cssDiameter, options, onReady) {
+    const opts = resolveOptions(options);
+    const px = getStampPixelSize(cssDiameter);
+    const key = `${opts.preset}|${opts.imageUrl || ""}|${px}`;
+    const cached = stampCache.get(key);
+    if (cached) {
+      stampCache.delete(key);
+      stampCache.set(key, cached);
+      return cached;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = px;
+    canvas.height = px;
+    const ctx = canvas.getContext("2d", { alpha: true });
+    paintSync(ctx, px, px, opts);
+    if (opts.imageUrl) {
+      paint(ctx, px, px, opts).then(() => {
+        if (typeof onReady === "function") onReady();
+      });
+    }
+    stampCache.set(key, canvas);
+    if (stampCache.size > STAMP_CACHE_LIMIT) {
+      stampCache.delete(stampCache.keys().next().value);
+    }
+    return canvas;
+  }
+
+  function clearStampCache() {
+    stampCache.clear();
+  }
+
   window.ScratchTexture = {
     paint,
     paintSync,
     createPreviewCanvas,
     resizePreviewCanvas,
     getPreviewPixelSize,
+    getStamp,
+    clearStampCache,
     loadImage,
     PRESETS,
   };

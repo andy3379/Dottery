@@ -74,8 +74,14 @@
     } catch (_e) {}
   }
 
-  function markLeaving() {
+  function markLeavingHard() {
     leaving = true;
+    if (fullscreenElement() || wantsFullscreen()) {
+      setWantsFullscreen(true);
+    }
+  }
+
+  function markLeavingSoft() {
     if (fullscreenElement() || wantsFullscreen()) {
       setWantsFullscreen(true);
     }
@@ -90,8 +96,8 @@
     document.addEventListener("keydown", onGesture, true);
   }
 
-  window.addEventListener("dottery:before-page-leave", markLeaving);
-  window.addEventListener("pagehide", markLeaving);
+  window.addEventListener("dottery:before-page-leave", markLeavingSoft);
+  window.addEventListener("pagehide", markLeavingHard);
 
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
