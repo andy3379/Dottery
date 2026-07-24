@@ -18,6 +18,11 @@
       speckDark: "rgba(60,30,90,",
     },
   };
+  const MAX_RENDER_DPR = 2;
+  const MAX_PREVIEW_PX = 512;
+  const PREVIEW_BUCKET_PX = 64;
+  const PRESET_CACHE_LIMIT = 8;
+  const presetCache = new Map();
 
   function clamp(value) {
     return Math.max(0, Math.min(255, value));
@@ -96,6 +101,41 @@
     ctx.restore();
   }
 
+  function getPresetTexture(width, height, presetKey) {
+    const key = `${presetKey}:${width}x${height}`;
+    const cached = presetCache.get(key);
+    if (cached) {
+      presetCache.delete(key);
+      presetCache.set(key, cached);
+      return cached;
+    }
+
+    const canvas = document.createElement("canvas");
+    canvas.width = width;
+    canvas.height = height;
+    paintPreset(canvas.getContext("2d", { willReadFrequently: true }), width, height, presetKey);
+    presetCache.set(key, canvas);
+
+    if (presetCache.size > PRESET_CACHE_LIMIT) {
+      presetCache.delete(presetCache.keys().next().value);
+    }
+    return canvas;
+  }
+
+  function paintCachedPreset(ctx, width, height, presetKey) {
+    ctx.clearRect(0, 0, width, height);
+    ctx.drawImage(getPresetTexture(width, height, presetKey), 0, 0);
+  }
+
+  function getRenderDpr() {
+    return Math.min(window.devicePixelRatio || 1, MAX_RENDER_DPR);
+  }
+
+  function getPreviewPixelSize(visualCssSize) {
+    const raw = Math.max(1, Math.ceil((visualCssSize * getRenderDpr()) / PREVIEW_BUCKET_PX) * PREVIEW_BUCKET_PX);
+    return Math.min(MAX_PREVIEW_PX, raw);
+  }
+
   function paintImage(ctx, width, height, image) {
     const cx = width / 2;
     const cy = height / 2;
@@ -138,20 +178,19 @@
         return;
       }
     }
-    paintPreset(ctx, width, height, opts.preset);
+    paintCachedPreset(ctx, width, height, opts.preset);
   }
 
   function paintSync(ctx, width, height, options) {
     const opts = resolveOptions(options);
-    paintPreset(ctx, width, height, opts.preset);
+    paintCachedPreset(ctx, width, height, opts.preset);
   }
 
   function createPreviewCanvas(visualCssSize, options, display) {
-    const dpr = window.devicePixelRatio || 1;
     const localSize = (display && display.localSize) || visualCssSize;
     const visual = Math.max(localSize, visualCssSize);
     const canvas = document.createElement("canvas");
-    const px = Math.max(1, Math.floor(visual * dpr));
+    const px = getPreviewPixelSize(visual);
     canvas.width = px;
     canvas.height = px;
     canvas.style.width = `${visual}px`;
@@ -176,13 +215,12 @@
   }
 
   function resizePreviewCanvas(canvas, visualCssSize, display) {
-    const dpr = window.devicePixelRatio || 1;
     const localSize =
       (display && display.localSize) ||
       Number(canvas.dataset.localSize) ||
       visualCssSize;
     const visual = Math.max(localSize, visualCssSize);
-    const px = Math.max(1, Math.floor(visual * dpr));
+    const px = getPreviewPixelSize(visual);
     canvas.style.width = `${visual}px`;
     canvas.style.height = `${visual}px`;
     canvas.style.transformOrigin = "0 0";

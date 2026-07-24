@@ -31,6 +31,10 @@
 
     const canvas = document.createElement("canvas");
     canvas.className = "scratch-card__canvas";
+    const sampleCanvas = document.createElement("canvas");
+    sampleCanvas.width = 64;
+    sampleCanvas.height = 64;
+    const sampleCtx = sampleCanvas.getContext("2d", { willReadFrequently: true });
 
     card.append(reveal, particleCanvas, canvas);
     if (container) {
@@ -56,14 +60,14 @@
       lastMoveTime: 0,
       circle: { cx: 0, cy: 0, r: 0 },
       visualSize: 0,
-      checkCounter: 0,
       sealedSnapshot: null,
       lastPx: 0,
       scratchNotified: false,
+      lastRevealCheckTime: 0,
     };
 
     function getDpr() {
-      return window.devicePixelRatio || 1;
+      return Math.min(window.devicePixelRatio || 1, 2);
     }
 
     function getLocalSize() {
@@ -313,20 +317,21 @@
 
     function measureClearedRatio() {
       if (!canvas.width || !canvas.height) return 0;
-      const { cx, cy, r } = state.circle;
-      const sampleStep = Math.max(2, Math.floor(r / 24));
-      const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+      const size = sampleCanvas.width;
+      const center = size / 2;
+      const radius = size / 2;
+      sampleCtx.clearRect(0, 0, size, size);
+      sampleCtx.drawImage(canvas, 0, 0, size, size);
+      const imageData = sampleCtx.getImageData(0, 0, size, size);
       const data = imageData.data;
       let total = 0;
       let clear = 0;
 
-      for (let y = cy - r; y <= cy + r; y += sampleStep) {
-        for (let x = cx - r; x <= cx + r; x += sampleStep) {
-          if (Math.hypot(x - cx, y - cy) > r) continue;
+      for (let y = 0; y < size; y++) {
+        for (let x = 0; x < size; x++) {
+          if (Math.hypot(x - center, y - center) > radius) continue;
           total += 1;
-          const px = Math.max(0, Math.min(canvas.width - 1, Math.floor(x)));
-          const py = Math.max(0, Math.min(canvas.height - 1, Math.floor(y)));
-          const alpha = data[(py * canvas.width + px) * 4 + 3];
+          const alpha = data[(y * size + x) * 4 + 3];
           if (alpha < 24) clear += 1;
         }
       }
@@ -355,10 +360,11 @@
       }
     }
 
-    function maybeReveal() {
+    function maybeReveal(force) {
       if (state.prizeTriggered || state.sealed) return;
-      state.checkCounter += 1;
-      if (state.checkCounter % 4 !== 0) return;
+      const now = performance.now();
+      if (!force && now - state.lastRevealCheckTime < 120) return;
+      state.lastRevealCheckTime = now;
       if (measureClearedRatio() >= config.revealThreshold) {
         triggerPrize();
       }
@@ -390,7 +396,7 @@
       scratchAt(pos.x, pos.y);
       emitScratchFeedback(pos.cssX, pos.cssY, 0, -1, 4);
       haptics.tick(4);
-      maybeReveal();
+      maybeReveal(false);
     }
 
     function onPointerMove(event) {
@@ -427,7 +433,7 @@
       state.lastY = pos.y;
       state.lastCssX = pos.cssX;
       state.lastCssY = pos.cssY;
-      maybeReveal();
+      maybeReveal(false);
     }
 
     function endPress() {
@@ -446,7 +452,7 @@
         canvas.releasePointerCapture(event.pointerId);
       }
       endPress();
-      maybeReveal();
+      maybeReveal(true);
     }
 
     canvas.addEventListener("pointerdown", onPointerDown, { passive: false });

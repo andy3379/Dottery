@@ -5,14 +5,28 @@
     .then((product) => {
       if (!product) return;
 
+      const detailImage = document.getElementById("boardDetailImage");
+      if (detailImage && product.detailImage) {
+        detailImage.src = product.detailImage;
+        detailImage.hidden = false;
+      }
+
       if (new URLSearchParams(window.location.search).get("preview") === "1") {
         document.documentElement.classList.add("is-preview");
         const homeLink = document.querySelector(".home-link");
         if (homeLink) homeLink.hidden = true;
       }
 
-      const boardInfo = BoardInfo.create({ product });
-      const mapView = MapView.create({
+      let mapView = null;
+
+      const boardInfo = BoardInfo.create({
+        product,
+        canRevealNext: () => (mapView ? mapView.hasOpenableSlots() : false),
+        onRevealBack: () => mapView && mapView.exitScratch(),
+        onRevealNext: () => mapView && mapView.enterRandomScratch(),
+      });
+
+      mapView = MapView.create({
         product,
         onSlotClaimed(_result, nextProduct) {
           boardInfo.update(nextProduct);

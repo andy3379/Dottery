@@ -163,17 +163,18 @@ function createAdminRouter(db) {
 
     db.prepare(
       `INSERT INTO products (
-        id, name, description, cover_image, price, category,
+        id, name, description, cover_image, detail_image, price, category,
         total_draws, cols, status, theme, foil_preset, foil_image,
         show_remaining, schedule_enabled, schedule_start, schedule_end,
         draw_mode, sort_order, soldout_visibility,
         published_at, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
     ).run(
       id,
       String(body.name || "").trim(),
       String(body.description || "").trim(),
       String(body.coverImage || "").trim(),
+      String(body.detailImage || "").trim(),
       Number(body.price) || 0,
       String(body.category || "").trim(),
       totalDraws,
@@ -225,7 +226,7 @@ function createAdminRouter(db) {
 
       db.prepare(
         `UPDATE products SET
-          name = ?, description = ?, cover_image = ?, price = ?, category = ?,
+          name = ?, description = ?, cover_image = ?, detail_image = ?, price = ?, category = ?,
           theme = ?, foil_preset = ?, foil_image = ?, show_remaining = ?,
           schedule_enabled = ?, schedule_start = ?, schedule_end = ?,
           sort_order = ?, soldout_visibility = ?, updated_at = ?
@@ -234,6 +235,7 @@ function createAdminRouter(db) {
         String(body.name != null ? body.name : product.name).trim(),
         String(body.description != null ? body.description : product.description).trim(),
         String(body.coverImage != null ? body.coverImage : product.cover_image).trim(),
+        String(body.detailImage != null ? body.detailImage : product.detail_image || "").trim(),
         body.price != null ? Number(body.price) || 0 : product.price,
         String(body.category != null ? body.category : product.category).trim(),
         theme,
@@ -292,7 +294,7 @@ function createAdminRouter(db) {
 
     db.prepare(
       `UPDATE products SET
-        name = ?, description = ?, cover_image = ?, price = ?, category = ?,
+        name = ?, description = ?, cover_image = ?, detail_image = ?, price = ?, category = ?,
         total_draws = ?, cols = ?, theme = ?, foil_preset = ?, foil_image = ?,
         show_remaining = ?, schedule_enabled = ?, schedule_start = ?, schedule_end = ?,
         draw_mode = ?, sort_order = ?, soldout_visibility = ?, updated_at = ?
@@ -301,6 +303,7 @@ function createAdminRouter(db) {
       String(body.name != null ? body.name : product.name).trim(),
       String(body.description != null ? body.description : product.description).trim(),
       String(body.coverImage != null ? body.coverImage : product.cover_image).trim(),
+      String(body.detailImage != null ? body.detailImage : product.detail_image || "").trim(),
       body.price != null ? Number(body.price) || 0 : product.price,
       String(body.category != null ? body.category : product.category).trim(),
       totalDraws,

@@ -8,7 +8,9 @@
 
 html,
 body {
-  min-height: 100%;
+  height: 100%;
+  overflow: hidden;
+  overscroll-behavior: none;
 }
 
 body {
@@ -46,7 +48,9 @@ a {
 
 .shop {
   position: relative;
-  min-height: 100dvh;
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
   display: flex;
   flex-direction: column;
 }
@@ -97,7 +101,7 @@ a {
 
 .search-float {
   position: fixed;
-  top: 1.4rem;
+  top: calc(1.4rem + env(safe-area-inset-top, 0px));
   left: 50%;
   transform: translateX(-50%);
   z-index: 20;
@@ -179,14 +183,15 @@ a {
 .shop__main {
   position: relative;
   flex: 1;
+  min-height: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  min-height: 100dvh;
-  padding: 5rem 1.75rem 2.5rem 5.5rem;
+  padding: 5.75rem 1.75rem 2rem 5.5rem;
+  padding-top: calc(5.75rem + env(safe-area-inset-top, 0px));
   box-sizing: border-box;
 }
 
@@ -196,7 +201,10 @@ a {
   display: flex;
   flex-direction: column;
   align-items: center;
+  justify-content: center;
   width: 100%;
+  height: 100%;
+  min-height: 0;
 }
 
 .hero__stage {
@@ -204,6 +212,8 @@ a {
   width: 100%;
   max-width: min(920px, 68vw);
   height: min(58vh, calc(min(920px, 68vw) * 1.28));
+  min-height: 0;
+  flex-shrink: 1;
   touch-action: pan-y;
 }
 
@@ -349,6 +359,7 @@ a {
 .hero__meta {
   width: min(46%, 420px);
   max-width: 100%;
+  flex-shrink: 0;
   margin-top: 1.25rem;
   display: grid;
   gap: 0.45rem;
@@ -438,6 +449,19 @@ a {
   margin-bottom: 0.7rem;
 }
 
+.hero__meta-dash-pct-wrap {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 0.4rem;
+}
+
+.hero__meta-dash-label {
+  font-size: 0.82rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--ink-soft);
+}
+
 .hero__meta-dash-pct {
   font-size: 1.35rem;
   font-weight: 600;
@@ -484,6 +508,11 @@ a {
   transition: width 0.65s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
+.hero__meta-dash-fill.is-empty {
+  min-width: 0;
+  box-shadow: none;
+}
+
 .hero__meta-dash-glow {
   position: absolute;
   top: 50%;
@@ -514,6 +543,7 @@ a {
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   gap: 0.4rem;
   margin-top: 0.85rem;
 }
@@ -713,8 +743,7 @@ a {
   .shop__main {
     padding-left: 1.5rem;
     padding-right: 1.5rem;
-    padding-bottom: 6.5rem;
-    min-height: 100dvh;
+    padding-bottom: 4rem;
   }
 
   .hero__stage {
@@ -750,7 +779,7 @@ a {
 
 @media (max-width: 480px) {
   .search-float {
-    top: 1rem;
+    top: calc(1rem + env(safe-area-inset-top, 0px));
     width: min(78vw, 300px);
   }
 

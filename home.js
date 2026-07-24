@@ -83,14 +83,24 @@
     return "0%";
   }
 
-  function heroProgressRatio(product) {
-    const scratched = Number(product.scratchedCount) || 0;
+  function heroRemaining(product) {
     const total = Number(product.totalDraws) || 0;
-    return total > 0 ? Math.min(1, scratched / total) : 0;
+    const scratched = Number(product.scratchedCount) || 0;
+    const remaining = Math.max(
+      0,
+      Number(product.remainingDraws) || total - scratched
+    );
+    return { remaining, total };
+  }
+
+  function heroProgressRatio(product) {
+    const { remaining, total } = heroRemaining(product);
+    return total > 0 ? Math.min(1, remaining / total) : 0;
   }
 
   function syncHeroMetaProgress(product) {
     if (!els.heroMeta || els.heroMeta.hidden) return;
+    const { remaining, total } = heroRemaining(product);
     const ratio = heroProgressRatio(product);
     const done = isDone(product);
     const dash = els.heroMeta.querySelector(".hero__meta-dash");
@@ -99,12 +109,11 @@
     const fill = els.heroMeta.querySelector(".hero__meta-dash-fill");
     if (dash) dash.classList.toggle("is-done", done);
     if (pct) pct.textContent = formatPct(ratio);
-    if (frac) {
-      const scratched = Number(product.scratchedCount) || 0;
-      const total = Number(product.totalDraws) || 0;
-      frac.textContent = `${scratched}/${total}`;
+    if (frac) frac.textContent = `${remaining}/${total}`;
+    if (fill) {
+      fill.style.width = `${ratio * 100}%`;
+      fill.classList.toggle("is-empty", ratio <= 0);
     }
-    if (fill) fill.style.width = `${ratio * 100}%`;
   }
 
   function buildHeroMeta(product) {
@@ -116,10 +125,9 @@
     els.heroMeta.appendChild(name);
 
     if (state.settings.showProgress) {
+      const { remaining, total } = heroRemaining(product);
       const ratio = heroProgressRatio(product);
       const done = isDone(product);
-      const scratched = Number(product.scratchedCount) || 0;
-      const total = Number(product.totalDraws) || 0;
 
       const dash = document.createElement("div");
       dash.className = `hero__meta-dash${done ? " is-done" : ""}`;
@@ -127,14 +135,24 @@
       const row = document.createElement("div");
       row.className = "hero__meta-dash-row";
 
+      const pctWrap = document.createElement("span");
+      pctWrap.className = "hero__meta-dash-pct-wrap";
+
+      const pctLabel = document.createElement("span");
+      pctLabel.className = "hero__meta-dash-label";
+      pctLabel.textContent = "剩餘:";
+      pctWrap.appendChild(pctLabel);
+
       const pct = document.createElement("span");
       pct.className = "hero__meta-dash-pct";
       pct.textContent = formatPct(ratio);
-      row.appendChild(pct);
+      pctWrap.appendChild(pct);
+
+      row.appendChild(pctWrap);
 
       const frac = document.createElement("span");
       frac.className = "hero__meta-dash-frac";
-      frac.textContent = `${scratched}/${total}`;
+      frac.textContent = `${remaining}/${total}`;
       row.appendChild(frac);
 
       dash.appendChild(row);
@@ -142,7 +160,7 @@
       const track = document.createElement("div");
       track.className = "hero__meta-dash-track";
       const fill = document.createElement("div");
-      fill.className = "hero__meta-dash-fill";
+      fill.className = `hero__meta-dash-fill${ratio <= 0 ? " is-empty" : ""}`;
       fill.style.width = `${ratio * 100}%`;
       const glow = document.createElement("span");
       glow.className = "hero__meta-dash-glow";
@@ -349,6 +367,7 @@
     if (!link) {
       link = document.createElement("a");
       link.className = "hero-card__link";
+      link.draggable = false;
       card.appendChild(link);
     }
     link.href = boardHref(product);
@@ -546,6 +565,10 @@
     let dragging = false;
     let didSwipe = false;
     let activePointerId = null;
+
+    els.heroStage.addEventListener("dragstart", (e) => {
+      e.preventDefault();
+    });
 
     els.heroStage.addEventListener("pointerdown", (e) => {
       if (heroList().length <= 1) return;

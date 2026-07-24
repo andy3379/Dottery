@@ -37,6 +37,7 @@ fs.mkdirSync(OUT, { recursive: true });
 write(".nojekyll", "");
 
 copy("scripts/pages/api-shim.js", "api-shim.js");
+copy("scripts/pages/firebase-store.js", "firebase-store.js");
 
 write(
   "index.html",
@@ -44,7 +45,7 @@ write(
     read("home.html"),
     [
       ['href="/admin"', 'href="admin/"'],
-      ['<script src="/page-transition-prep.js"></script>', '<script src="api-shim.js"></script>\n  <script src="page-transition-prep.js"></script>'],
+      ['<script src="/page-transition-prep.js"></script>', '<script src="api-shim.js"></script>\n  <script type="module" src="firebase-store.js"></script>\n  <script src="page-transition-prep.js"></script>'],
       ['href="/home.css"', 'href="home.css"'],
       ['href="/page-transition.css"', 'href="page-transition.css"'],
       ['<script src="/page-transition.js"></script>', '<script src="page-transition.js"></script>'],
@@ -60,7 +61,7 @@ write(
     read("board.html"),
     [
       ['href="/shop"', 'href="index.html"'],
-      ['<script src="/page-transition-prep.js"></script>', '<script src="api-shim.js"></script>\n  <script src="page-transition-prep.js"></script>'],
+      ['<script src="/page-transition-prep.js"></script>', '<script src="api-shim.js"></script>\n  <script type="module" src="firebase-store.js"></script>\n  <script src="page-transition-prep.js"></script>'],
       ['href="/styles.css"', 'href="styles.css"'],
       ['href="/page-transition.css"', 'href="page-transition.css"'],
       ['src="/page-transition.js"', 'src="page-transition.js"'],
@@ -86,7 +87,7 @@ write(
       ['href="/admin/admin.css"', 'href="admin.css"'],
       [
         '<script src="/admin/economics.js"></script>',
-        '<script src="../api-shim.js"></script>\n  <script src="economics.js"></script>',
+        '<script src="../api-shim.js"></script>\n  <script type="module" src="../firebase-store.js"></script>\n  <script src="economics.js"></script>',
       ],
       ['<script src="/admin/prize-number-spec.js"></script>', '<script src="prize-number-spec.js"></script>'],
       ['<script src="/admin/admin.js"></script>', '<script src="admin.js"></script>'],

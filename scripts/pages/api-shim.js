@@ -1,7 +1,6 @@
 (function () {
   "use strict";
 
-  var DB_KEY = "dottery-pages-db";
   var AUTH_KEY = "dottery-pages-admin";
   var DEFAULT_ADMIN_PIN = "0000";
   var THEMES = ["light", "warm", "cool", "dark", "rose"];
@@ -87,6 +86,7 @@
       name: "Dottery No.1",
       description: "共 12 抽，全數刮完可獲得最後賞。",
       coverImage: coverSvg("#1f2430", "#e8b34b"),
+      detailImage: "",
       price: 150,
       category: "示範",
       totalDraws: 12,
@@ -112,25 +112,36 @@
     return db;
   }
 
+  var remoteStore = null;
+  var remoteReadyResolve = null;
+  var remoteReady = new Promise(function (resolve) {
+    remoteReadyResolve = resolve;
+  });
+
+  window.__dotteryRemoteAttach = function (remote) {
+    remoteStore = remote;
+    remoteReadyResolve();
+  };
+
   function loadDb() {
-    try {
-      var raw = localStorage.getItem(DB_KEY);
-      if (raw) {
-        var parsed = JSON.parse(raw);
-        if (parsed && Array.isArray(parsed.products) && parsed.settings) {
-          return parsed;
-        }
+    var db = remoteStore.db;
+    if (db && Array.isArray(db.products) && db.settings) {
+      if (remoteStore.fresh && db.products.length === 0) {
+        remoteStore.fresh = false;
+        db = seedDb();
+        remoteStore.db = db;
       }
-    } catch (_e) {}
-    var db = seedDb();
-    saveDb(db);
-    return db;
+      return db;
+    }
+    var seeded = seedDb();
+    saveDb(seeded);
+    return seeded;
   }
 
   function saveDb(db) {
-    try {
-      localStorage.setItem(DB_KEY, JSON.stringify(db));
-    } catch (_e) {}
+    if (!db.snapshots) db.snapshots = {};
+    remoteStore.db = db;
+    remoteStore.save(db);
   }
 
   function findProduct(db, id) {
@@ -196,6 +207,7 @@
       name: product.name,
       description: product.description,
       coverImage: product.coverImage,
+      detailImage: product.detailImage || "",
       price: product.price,
       category: product.category,
       totalDraws: product.totalDraws,
@@ -989,6 +1001,47 @@
     });
   }
 
+  function encodeCanvas(canvas, quality) {
+    var out = canvas.toDataURL("image/webp", quality);
+    if (out.indexOf("data:image/webp") !== 0) {
+      out = canvas.toDataURL("image/jpeg", quality);
+    }
+    return out;
+  }
+
+  function compressImageDataUrl(dataUrl) {
+    return new Promise(function (resolve) {
+      var img = new Image();
+      img.onload = function () {
+        var limit = 700000;
+        var max = 1600;
+        var best = null;
+        for (var attempt = 0; attempt < 5; attempt++) {
+          var scale = Math.min(1, max / Math.max(img.width, img.height, 1));
+          var canvas = document.createElement("canvas");
+          canvas.width = Math.max(1, Math.round(img.width * scale));
+          canvas.height = Math.max(1, Math.round(img.height * scale));
+          var ctx = canvas.getContext("2d");
+          ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+          var quality = 0.85;
+          var out = encodeCanvas(canvas, quality);
+          while (out.length > limit && quality > 0.4) {
+            quality -= 0.15;
+            out = encodeCanvas(canvas, quality);
+          }
+          if (!best || out.length < best.length) best = out;
+          if (best.length <= limit) break;
+          max = Math.round(max * 0.7);
+        }
+        resolve(best.length < dataUrl.length ? best : dataUrl);
+      };
+      img.onerror = function () {
+        resolve(dataUrl);
+      };
+      img.src = dataUrl;
+    });
+  }
+
   function handleAdmin(db, method, segments, query, init) {
     var route = segments.join("/");
 
@@ -1051,7 +1104,14 @@
         return json({ error: "檔案過大" }, 400);
       }
       return readFileAsDataUrl(file).then(function (dataUrl) {
-        return json({ url: dataUrl });
+        var finalize = function (url) {
+          if (url.length > 1000000) {
+            return json({ error: "圖片壓縮後仍過大" }, 400);
+          }
+          return json({ url: url });
+        };
+        if (file.size <= 300 * 1024) return finalize(dataUrl);
+        return compressImageDataUrl(dataUrl).then(finalize);
       });
     }
 
@@ -1082,6 +1142,7 @@
         name: String(input.name || "").trim(),
         description: String(input.description || "").trim(),
         coverImage: String(input.coverImage || "").trim(),
+        detailImage: String(input.detailImage || "").trim(),
         price: Number(input.price) || 0,
         category: String(input.category || "").trim(),
         totalDraws: totalDraws,
@@ -1127,6 +1188,9 @@
           ).trim();
           target.coverImage = String(
             body.coverImage != null ? body.coverImage : target.coverImage
+          ).trim();
+          target.detailImage = String(
+            body.detailImage != null ? body.detailImage : target.detailImage || ""
           ).trim();
           target.price = body.price != null ? Number(body.price) || 0 : target.price;
           target.category = String(
@@ -1177,6 +1241,9 @@
         ).trim();
         target.coverImage = String(
           body.coverImage != null ? body.coverImage : target.coverImage
+        ).trim();
+        target.detailImage = String(
+          body.detailImage != null ? body.detailImage : target.detailImage || ""
         ).trim();
         target.price = body.price != null ? Number(body.price) || 0 : target.price;
         target.category = String(body.category != null ? body.category : target.category).trim();
@@ -1272,6 +1339,7 @@
             name: raw.name,
             description: raw.description,
             coverImage: raw.coverImage,
+            detailImage: raw.detailImage || "",
             price: raw.price,
             category: raw.category,
             totalDraws: raw.totalDraws,
@@ -1363,7 +1431,7 @@
         : Promise.reject(new TypeError("fetch unavailable"));
     }
 
-    return Promise.resolve().then(function () {
+    return remoteReady.then(function () {
       var method = String((init && init.method) || (input && input.method) || "GET").toUpperCase();
       var queryIndex = apiPath.indexOf("?");
       var pathname = queryIndex === -1 ? apiPath : apiPath.slice(0, queryIndex);

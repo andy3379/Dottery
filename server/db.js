@@ -67,6 +67,7 @@ function createDb() {
       name TEXT NOT NULL DEFAULT '',
       description TEXT NOT NULL DEFAULT '',
       cover_image TEXT NOT NULL DEFAULT '',
+      detail_image TEXT NOT NULL DEFAULT '',
       price REAL NOT NULL DEFAULT 0,
       category TEXT NOT NULL DEFAULT '',
       total_draws INTEGER NOT NULL DEFAULT 12,
@@ -168,6 +169,9 @@ function createDb() {
     db.exec(
       `ALTER TABLE products ADD COLUMN soldout_visibility TEXT NOT NULL DEFAULT 'show_soldout'`
     );
+  }
+  if (!productColNames.includes("detail_image")) {
+    db.exec(`ALTER TABLE products ADD COLUMN detail_image TEXT NOT NULL DEFAULT ''`);
   }
 
   const settingsColumns = db.prepare(`PRAGMA table_info(settings)`).all();

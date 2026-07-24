@@ -6,6 +6,9 @@
   const TILE_SLOT_COLS = 8;
   const TILE_SLOT_ROWS = 8;
   const PAN_CLICK_THRESHOLD = 6;
+  const SCRATCH_ENTRY_SCALE_RATIO = 0.39;
+  const ZOOM_ASSIST_FACTOR = 3;
+  const MIN_SLOT_HIT_SCREEN_PX = 16;
 
   const FOIL_FILL = {
     silver: "#a3a3a3",
@@ -42,6 +45,7 @@
       panStart: null,
       pinchStart: null,
       tapCandidate: null,
+      viewportRect: null,
       getFoilOptions: options.getFoilOptions || (() => ({ preset: "silver", imageUrl: "" })),
       getSlotData: options.getSlotData || (() => null),
       getSlotResidueThumb: options.getSlotResidueThumb || null,
@@ -151,6 +155,37 @@
       return getLayout().slotSize * state.camera.scale;
     }
 
+    function canEnterScratch() {
+      return state.camera.scale >= getMaxScale() * SCRATCH_ENTRY_SCALE_RATIO;
+    }
+
+    function getSlotScreenPoint(index) {
+      const center = getSlotCenter(index);
+      return {
+        x: center.x * state.camera.scale + state.camera.tx,
+        y: center.y * state.camera.scale + state.camera.ty,
+      };
+    }
+
+    function zoomTowardSlot(index, factor, animate) {
+      const center = getSlotCenter(index);
+      const vw = viewport.clientWidth;
+      const vh = viewport.clientHeight;
+      const nextScale = clamp(
+        state.camera.scale * (factor || ZOOM_ASSIST_FACTOR),
+        getMinScale(),
+        getMaxScale()
+      );
+      return flyTo(
+        {
+          tx: vw / 2 - center.x * nextScale,
+          ty: vh / 2 - center.y * nextScale,
+          scale: nextScale,
+        },
+        animate
+      );
+    }
+
     function getLodLevel(visualSize) {
       if (state.mode === "scratch") return 3;
       if (visualSize < LOD_0_MAX) return 0;
@@ -254,6 +289,11 @@
       };
     }
 
+    function getViewportPoint(clientX, clientY) {
+      const rect = state.viewportRect || viewport.getBoundingClientRect();
+      return { x: clientX - rect.left, y: clientY - rect.top };
+    }
+
     function getVisibleWorldRect() {
       const vw = viewport.clientWidth;
       const vh = viewport.clientHeight;
@@ -269,21 +309,39 @@
       };
     }
 
-    function pickSlotIndex(screenX, screenY) {
-      const world = screenToWorld(screenX, screenY);
+    function pickSlotIndex(clientX, clientY) {
+      const point = getViewportPoint(clientX, clientY);
+      const world = screenToWorld(point.x, point.y);
       const { slotCount } = state.product;
       const cols = getCols();
       const { slotSize, gap } = getLayout();
       const step = slotSize + gap;
-      const col = Math.floor(world.x / step);
-      const row = Math.floor(world.y / step);
-      if (col < 0 || row < 0 || col >= cols) return null;
-      const index = row * cols + col;
-      if (index < 0 || index >= slotCount) return null;
-      const cx = col * step + slotSize / 2;
-      const cy = row * step + slotSize / 2;
-      if (Math.hypot(world.x - cx, world.y - cy) > slotSize / 2) return null;
-      return index;
+      const hitRadius = Math.max(
+        slotSize / 2,
+        MIN_SLOT_HIT_SCREEN_PX / Math.max(state.camera.scale, 0.0001)
+      );
+      const searchRadius = hitRadius + step;
+      const colStart = Math.max(0, Math.floor((world.x - searchRadius) / step));
+      const colEnd = Math.min(cols - 1, Math.floor((world.x + searchRadius) / step));
+      const rowStart = Math.max(0, Math.floor((world.y - searchRadius) / step));
+      const rowEnd = Math.floor((world.y + searchRadius) / step);
+
+      let bestIndex = null;
+      let bestDist = Infinity;
+      for (let row = rowStart; row <= rowEnd; row++) {
+        for (let col = colStart; col <= colEnd; col++) {
+          const index = row * cols + col;
+          if (index < 0 || index >= slotCount) continue;
+          const cx = col * step + slotSize / 2;
+          const cy = row * step + slotSize / 2;
+          const dist = Math.hypot(world.x - cx, world.y - cy);
+          if (dist <= hitRadius && dist < bestDist) {
+            bestDist = dist;
+            bestIndex = index;
+          }
+        }
+      }
+      return bestIndex;
     }
 
     function applyCameraTransform(camera, animate) {
@@ -694,7 +752,9 @@
         syncTileLayer();
       } else {
         syncSlotLayer();
-        syncSlotPreviewSizes();
+        if (state.pointers.size === 0) {
+          syncSlotPreviewSizes();
+        }
       }
     }
 
@@ -775,7 +835,8 @@
       }
     }
 
-    function zoomAt(screenX, screenY, factor) {
+    function zoomAt(clientX, clientY, factor) {
+      const { x: screenX, y: screenY } = getViewportPoint(clientX, clientY);
       const before = screenToWorld(screenX, screenY);
       const nextScale = clamp(state.camera.scale * factor, getMinScale(), getMaxScale());
       const tx = screenX - before.x * nextScale;
@@ -821,8 +882,12 @@
       if (state.pointers.size === 2 && state.pinchStart) {
         const pts = Array.from(state.pointers.values());
         const dist = Math.hypot(pts[0].x - pts[1].x, pts[0].y - pts[1].y);
-        const cx = (pts[0].x + pts[1].x) / 2;
-        const cy = (pts[0].y + pts[1].y) / 2;
+        const mid = getViewportPoint(
+          (pts[0].x + pts[1].x) / 2,
+          (pts[0].y + pts[1].y) / 2
+        );
+        const cx = mid.x;
+        const cy = mid.y;
         const factor = dist / state.pinchStart.dist;
         const before = screenToWorld(cx, cy);
         const nextScale = clamp(
@@ -880,6 +945,7 @@
         state.panStart = null;
         state.tapCandidate = null;
       }
+      scheduleRender();
       try {
         viewport.releasePointerCapture(event.pointerId);
       } catch (_error) {}
@@ -895,6 +961,7 @@
 
     function handleResize() {
       world.classList.remove("is-animating");
+      state.viewportRect = viewport.getBoundingClientRect();
       const layoutChanged = syncDisplayLayout();
       if (state.mode === "scratch" && state.selectedIndex !== null) {
         applyCameraTransform(getDetailCamera(state.selectedIndex), false);
@@ -911,6 +978,7 @@
 
     function mount(product) {
       loadProduct(product);
+      state.viewportRect = viewport.getBoundingClientRect();
       bindInput();
       scheduleRender();
     }
@@ -924,9 +992,13 @@
       loadProduct,
       handleResize,
       getVisualSlotSize,
+      canEnterScratch,
+      getSlotScreenPoint,
+      zoomTowardSlot,
       getSlotHandle,
       getDetailCamera,
       getSlotAlignCamera,
+      getFitAllCamera,
       flyTo,
       flyToSlot,
       flyToSlotDetail,

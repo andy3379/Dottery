@@ -143,6 +143,7 @@
       name: String(product.name || ""),
       description: String(product.description || ""),
       coverImage: String(product.coverImage || ""),
+      detailImage: String(product.detailImage || ""),
       price: Number(product.price) || 0,
       totalDraws: Number(product.totalDraws) || 0,
       theme: String(product.theme || "light"),
@@ -321,6 +322,7 @@
       alt: "",
     });
     if (!currentUrl) img.style.display = "none";
+    wrap.appendChild(img);
 
     if (!disabled) {
       const input = el("input", { type: "file", accept: "image/*" });
@@ -356,6 +358,7 @@
           }
           onChange(url);
           notifyProductEdited();
+          render();
         } catch (error) {
           state.error = error.message;
           render();
@@ -384,12 +387,11 @@
               render();
             },
           },
-          "×"
+            "×"
         )
       );
     }
 
-    if (currentUrl) wrap.appendChild(img);
     return wrap;
   }
 
@@ -914,6 +916,7 @@
       name: "",
       description: "",
       coverImage: "",
+      detailImage: "",
       price: 0,
       totalDraws: 12,
       theme: "light",
@@ -2222,6 +2225,14 @@
             })
           ),
         ]),
+        el("div", { className: "full" }, [
+          field(
+            "商品頁底部大圖",
+            coverPicker(product.detailImage, (url) => {
+              product.detailImage = url;
+            })
+          ),
+        ]),
         el("div", { className: "form-grid form-grid--pair full" }, [
           field(
             "價格 (NTD)",
@@ -2547,6 +2558,7 @@
         name: product.name,
         description: product.description,
         coverImage: product.coverImage,
+        detailImage: product.detailImage,
         price: product.price,
         totalDraws: product.totalDraws,
         theme: product.theme,

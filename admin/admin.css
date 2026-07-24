@@ -1672,6 +1672,11 @@ textarea {
   height: 100%;
   object-fit: cover;
   border-radius: 8px;
+  pointer-events: none;
+}
+
+.upload-dropzone input[type="file"] {
+  z-index: 1;
 }
 
 .upload-dropzone__clear {

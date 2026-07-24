@@ -36,23 +36,19 @@ html.page-x-prep--to-shop {
 
 @keyframes page-x-in-board {
   from {
-    transform: translate3d(12%, 0, 0) scale(0.978);
-    opacity: 0.88;
+    transform: translate3d(4%, 0, 0);
   }
   to {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 
 @keyframes page-x-in-shop {
   from {
-    transform: translate3d(-12%, 0, 0) scale(0.978);
-    opacity: 0.88;
+    transform: translate3d(-4%, 0, 0);
   }
   to {
-    transform: translate3d(0, 0, 0) scale(1);
-    opacity: 1;
+    transform: translate3d(0, 0, 0);
   }
 }
 
