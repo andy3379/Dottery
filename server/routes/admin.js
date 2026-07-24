@@ -18,6 +18,9 @@ const {
   createPrizeId,
   normalizePrizeInput,
   publishProduct,
+  duplicateProduct,
+  archiveProduct,
+  unarchiveProduct,
   resetBoard,
   getSettings,
   saveSettings,
@@ -68,6 +71,15 @@ function createAdminRouter(db) {
       return;
     }
     req.session.admin = true;
+    res.json({ ok: true });
+  });
+
+  router.post("/verify-pin", (req, res) => {
+    const password = String((req.body && req.body.password) || "");
+    if (!/^\d{4}$/.test(password) || password !== getAdminPin(db)) {
+      res.status(401).json({ error: "密碼錯誤" });
+      return;
+    }
     res.json({ ok: true });
   });
 
@@ -443,6 +455,33 @@ function createAdminRouter(db) {
     ).run(nowIso(), product.id);
 
     res.json(buildProductDetail(db, product.id, { includeSlots: true, revealAll: true }));
+  });
+
+  router.post("/products/:id/duplicate", (req, res) => {
+    const result = duplicateProduct(db, req.params.id);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.status(201).json(result.product);
+  });
+
+  router.post("/products/:id/archive", (req, res) => {
+    const result = archiveProduct(db, req.params.id);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json(result.product);
+  });
+
+  router.post("/products/:id/unarchive", (req, res) => {
+    const result = unarchiveProduct(db, req.params.id);
+    if (result.error) {
+      res.status(result.status).json({ error: result.error });
+      return;
+    }
+    res.json(result.product);
   });
 
   router.post("/products/:id/reset", (req, res) => {

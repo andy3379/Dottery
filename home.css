@@ -43,7 +43,7 @@ a {
   --surface-soft: #eef0f6;
   --ease-apple: cubic-bezier(0.25, 0.1, 0.25, 1);
   --ease-apple-spring: cubic-bezier(0.22, 1, 0.36, 1);
-  --duration-hero: 0.58s;
+  --duration-hero: 0.48s;
 }
 
 .shop {
@@ -178,6 +178,541 @@ a {
   background: #ffffff;
 }
 
+.price-calc {
+  position: fixed;
+  top: calc(1.15rem + env(safe-area-inset-top, 0px));
+  left: 1.15rem;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+}
+
+.price-calc__start {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 3rem;
+  height: 3rem;
+  padding: 0 1.05rem;
+  border: none;
+  border-radius: 999px;
+  background: #171717;
+  color: #ffffff;
+  font-size: 0.92rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  box-shadow: 0 14px 32px -18px rgba(20, 20, 35, 0.45);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.price-calc__start:hover {
+  transform: scale(1.05);
+  background: #000000;
+}
+
+.price-calc__start[hidden] {
+  display: none;
+}
+
+.price-calc__session {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+  min-height: 3rem;
+  padding: 0.35rem 0.4rem 0.35rem 1rem;
+  border-radius: 999px;
+  background: #ffffff;
+  box-shadow: 0 14px 32px -18px rgba(20, 20, 35, 0.35);
+}
+
+.price-calc__session[hidden] {
+  display: none;
+}
+
+.price-calc__code {
+  font-size: 0.95rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.price-calc__amount {
+  font-size: 0.95rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+  min-width: 4.5rem;
+}
+
+.price-calc__end {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.3rem;
+  padding: 0 0.9rem;
+  border: none;
+  border-radius: 999px;
+  background: #171717;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.2s ease;
+}
+
+.price-calc__end:hover {
+  background: #000000;
+}
+
+.price-calc-confirm {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(21, 21, 26, 0.42);
+}
+
+.price-calc-confirm[hidden] {
+  display: none;
+}
+
+.price-calc-confirm__dialog {
+  width: min(100%, 18.5rem);
+  padding: 1.35rem 1.25rem 1.15rem;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 48px -20px rgba(20, 20, 35, 0.4);
+}
+
+.price-calc-confirm__title {
+  font-size: 1.15rem;
+  font-weight: 800;
+  letter-spacing: 0.06em;
+  color: var(--ink);
+  text-align: center;
+}
+
+.price-calc-confirm__meta {
+  margin-top: 0.85rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.75rem;
+  min-height: 2.6rem;
+  padding: 0 0.9rem;
+  border-radius: 999px;
+  background: var(--surface-soft);
+}
+
+.price-calc-confirm__meta[hidden] {
+  display: none;
+}
+
+.price-calc-confirm__code {
+  font-size: 1rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.price-calc-confirm__amount {
+  font-size: 1rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.price-calc-confirm__actions {
+  margin-top: 1.2rem;
+  display: grid;
+  grid-template-columns: 2.75rem 1fr;
+  gap: 0.55rem;
+}
+
+.price-calc-confirm__cancel,
+.price-calc-confirm__ok {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.75rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.2s ease, transform 0.15s ease;
+}
+
+.price-calc-confirm__cancel {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.price-calc-confirm__cancel:hover {
+  background: #e4e6ee;
+}
+
+.price-calc-confirm__ok {
+  background: #171717;
+  color: #ffffff;
+  letter-spacing: 0.06em;
+}
+
+.price-calc-confirm__ok:hover {
+  background: #000000;
+}
+
+.price-calc-bill {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.25rem;
+  background: rgba(21, 21, 26, 0.42);
+}
+
+.price-calc-bill[hidden] {
+  display: none;
+}
+
+.price-calc-bill__dialog {
+  width: min(100%, 22rem);
+  max-height: min(78vh, 36rem);
+  display: flex;
+  flex-direction: column;
+  padding: 1.25rem 1.15rem 1.1rem;
+  border-radius: 16px;
+  background: #ffffff;
+  box-shadow: 0 24px 48px -20px rgba(20, 20, 35, 0.4);
+}
+
+.price-calc-bill__head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.price-calc-bill__code {
+  font-size: 1.05rem;
+  font-weight: 800;
+  letter-spacing: 0.12em;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.price-calc-bill__amount {
+  font-size: 1.2rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.price-calc-bill__count {
+  margin-top: 0.35rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-soft);
+}
+
+.price-calc-bill__list {
+  margin-top: 0.9rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.45rem;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+  padding-right: 0.15rem;
+}
+
+.price-calc-bill__list[hidden],
+.price-calc-bill__actions[hidden] {
+  display: none;
+}
+
+.price-calc-bill__item {
+  display: grid;
+  grid-template-columns: 2.75rem 1fr auto;
+  gap: 0.7rem;
+  align-items: center;
+  padding: 0.55rem 0.65rem;
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.price-calc-bill__thumb {
+  width: 2.75rem;
+  height: 2.75rem;
+  border-radius: 10px;
+  object-fit: cover;
+  background: #ffffff;
+}
+
+.price-calc-bill__thumb--empty {
+  display: block;
+  background: #e4e6ee;
+}
+
+.price-calc-bill__body {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+}
+
+.price-calc-bill__grade {
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--ink-soft);
+}
+
+.price-calc-bill__name {
+  font-size: 0.92rem;
+  font-weight: 700;
+  color: var(--ink);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.price-calc-bill__product {
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--ink-faint);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.price-calc-bill__price {
+  font-size: 0.85rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink);
+}
+
+.price-calc-bill__empty {
+  padding: 1.4rem 0.75rem;
+  text-align: center;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--ink-faint);
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.price-calc-bill__number {
+  font-size: 0.72rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--ink-faint);
+}
+
+.price-calc-bill__actions {
+  margin-top: 1rem;
+  display: grid;
+  grid-template-columns: 2.75rem 1fr;
+  gap: 0.55rem;
+  flex-shrink: 0;
+}
+
+.price-calc-bill__cancel,
+.price-calc-bill__ok {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 2.75rem;
+  border: none;
+  border-radius: 12px;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.2s ease;
+}
+
+.price-calc-bill__cancel {
+  background: var(--surface-soft);
+  color: var(--ink);
+}
+
+.price-calc-bill__cancel:hover {
+  background: #e4e6ee;
+}
+
+.price-calc-bill__ok {
+  background: #171717;
+  color: #ffffff;
+  letter-spacing: 0.06em;
+}
+
+.price-calc-bill__ok:hover {
+  background: #000000;
+}
+
+.price-calc-pin {
+  margin-top: 0.85rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.85rem;
+  flex-shrink: 0;
+}
+
+.price-calc-pin[hidden] {
+  display: none;
+}
+
+.price-calc-pin__dots {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.85rem;
+  min-height: 1rem;
+}
+
+.price-calc-pin__dot {
+  width: 0.7rem;
+  height: 0.7rem;
+  border-radius: 50%;
+  border: 1.5px solid #171717;
+  background: transparent;
+  transition: background 0.12s ease, border-color 0.12s ease;
+}
+
+.price-calc-pin__dot.is-filled {
+  background: #171717;
+}
+
+.price-calc-pin__dots.is-shake {
+  animation: price-calc-pin-shake 0.35s ease;
+}
+
+@keyframes price-calc-pin-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-8px);
+  }
+  40% {
+    transform: translateX(8px);
+  }
+  60% {
+    transform: translateX(-6px);
+  }
+  80% {
+    transform: translateX(6px);
+  }
+}
+
+.price-calc-pin__pad {
+  width: 100%;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 0.45rem;
+}
+
+.price-calc-pin__key,
+.price-calc-pin__spacer {
+  height: 2.85rem;
+  border-radius: 12px;
+}
+
+.price-calc-pin__key {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 1.15rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: background 0.15s ease;
+}
+
+.price-calc-pin__key:hover {
+  background: #e4e6ee;
+}
+
+.price-calc-pin__key--del {
+  background: #171717;
+  color: #ffffff;
+}
+
+.price-calc-pin__key--del:hover {
+  background: #000000;
+}
+
+.price-calc-pin__back {
+  width: 100%;
+  height: 2.55rem;
+  border: none;
+  border-radius: 12px;
+  background: var(--surface-soft);
+  color: var(--ink);
+  font-size: 1rem;
+  font-weight: 700;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+
+.price-calc-pin__back:hover {
+  background: #e4e6ee;
+}
+
+.shop-fullscreen {
+  position: fixed;
+  top: 1.15rem;
+  right: 1.15rem;
+  z-index: 40;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 3rem;
+  height: 3rem;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: #171717;
+  color: #ffffff;
+  box-shadow: 0 14px 32px -18px rgba(20, 20, 35, 0.45);
+  cursor: pointer;
+  touch-action: manipulation;
+  transition: transform 0.2s ease, background 0.2s ease;
+}
+
+.shop-fullscreen:hover {
+  transform: scale(1.05);
+  background: #000000;
+}
+
+.shop-fullscreen[hidden] {
+  display: none;
+}
+
+.shop-fullscreen svg {
+  width: 1.15rem;
+  height: 1.15rem;
+}
+
 /* ---------- Layout ---------- */
 
 .shop__main {
@@ -190,7 +725,7 @@ a {
   width: 100%;
   max-width: 1280px;
   margin: 0 auto;
-  padding: 5.75rem 1.75rem 2rem 5.5rem;
+  padding: 5.75rem 1.75rem 2rem;
   padding-top: calc(5.75rem + env(safe-area-inset-top, 0px));
   box-sizing: border-box;
 }
@@ -222,7 +757,6 @@ a {
   inset: 0;
   z-index: 1;
   overflow: visible;
-  perspective: 1600px;
 }
 
 .hero-card {
@@ -237,8 +771,13 @@ a {
   box-shadow: 0 40px 70px -32px rgba(20, 20, 35, 0.4);
   transition:
     transform var(--duration-hero) var(--ease-apple-spring),
-    opacity calc(var(--duration-hero) * 0.82) var(--ease-apple),
-    box-shadow 0.48s var(--ease-apple);
+    opacity calc(var(--duration-hero) * 0.82) var(--ease-apple);
+  transform: translate3d(-50%, 0, 0);
+  backface-visibility: hidden;
+  contain: layout style;
+}
+
+.hero-card.is-animating {
   will-change: transform, opacity;
 }
 
@@ -248,12 +787,8 @@ a {
   border-radius: inherit;
   overflow: hidden;
   background: #e4e6ee;
-  isolation: isolate;
-  transform: translateZ(0) scale(1);
-  transition: transform calc(var(--duration-hero) * 1.1) var(--ease-apple-spring);
+  transform: translateZ(0);
   pointer-events: none;
-  -webkit-mask-image: -webkit-radial-gradient(white, black);
-  mask-image: radial-gradient(white, black);
 }
 
 .hero-card__img {
@@ -263,14 +798,6 @@ a {
   display: block;
   border-radius: inherit;
   pointer-events: none;
-}
-
-.hero-card--center .hero-card__clip {
-  transform: translateZ(0) scale(1);
-}
-
-.hero-card--side .hero-card__clip {
-  transform: translateZ(0) scale(1.03);
 }
 
 .hero-card__img--empty {
@@ -349,6 +876,14 @@ a {
   transition:
     opacity 0.38s var(--ease-apple),
     transform 0.48s var(--ease-apple-spring);
+}
+
+.hero-card__price-unit {
+  margin-left: 0.12em;
+  font-size: 0.48em;
+  font-weight: 600;
+  letter-spacing: 0;
+  vertical-align: 0.18em;
 }
 
 .hero-card--side .hero-card__price {
@@ -569,7 +1104,7 @@ a {
 }
 
 .hero-edge--prev {
-  left: 6.25rem;
+  left: 0.25rem;
 }
 
 .hero-edge--next {
@@ -767,7 +1302,6 @@ a {
 
 @media (prefers-reduced-motion: reduce) {
   .hero-card,
-  .hero-card__clip,
   .hero-card__price,
   .hero__meta,
   .hero__meta-name,

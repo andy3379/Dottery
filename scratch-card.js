@@ -74,27 +74,27 @@
       return card.clientWidth || config.layoutSize;
     }
 
-    function resolveVisualSize() {
+    function getScreenSize() {
+      const rect = card.getBoundingClientRect();
+      if (rect.width > 0) return rect.width;
       if (typeof config.getVisualSize === "function") {
         const value = Number(config.getVisualSize());
         if (value > 0) return value;
       }
-      const rect = card.getBoundingClientRect();
-      return rect.width > 0 ? rect.width : config.layoutSize;
+      return getLocalSize();
     }
 
-    function fitCanvasBuffer(targetCanvas, visualSize) {
+    function fitCanvasBuffer(targetCanvas, screenSize) {
       const dpr = getDpr();
-      const local = getLocalSize();
-      const visual = Math.max(local, visualSize);
-      const px = Math.max(1, Math.floor(visual * dpr));
+      const display = Math.max(1, screenSize);
+      const px = Math.max(1, Math.floor(display * dpr));
       targetCanvas.width = px;
       targetCanvas.height = px;
-      targetCanvas.style.width = `${visual}px`;
-      targetCanvas.style.height = `${visual}px`;
-      targetCanvas.style.transformOrigin = "0 0";
-      targetCanvas.style.transform = `scale(${local / visual})`;
-      return { px, visual, local };
+      targetCanvas.style.width = "100%";
+      targetCanvas.style.height = "100%";
+      targetCanvas.style.inset = "0";
+      targetCanvas.style.transform = "none";
+      return { px, display };
     }
 
     function ensureEffects() {
@@ -165,19 +165,12 @@
     }
 
     async function resize() {
-      const visual = resolveVisualSize();
+      const screen = getScreenSize();
       const dpr = getDpr();
-      const local = getLocalSize();
-      const px = Math.max(1, Math.floor(Math.max(local, visual) * dpr));
+      const px = Math.max(1, Math.floor(screen * dpr));
 
       if (px === state.lastPx && state.coated) {
-        state.visualSize = visual;
-        canvas.style.width = `${Math.max(local, visual)}px`;
-        canvas.style.height = `${Math.max(local, visual)}px`;
-        canvas.style.transform = `scale(${local / Math.max(local, visual)})`;
-        particleCanvas.style.width = canvas.style.width;
-        particleCanvas.style.height = canvas.style.height;
-        particleCanvas.style.transform = canvas.style.transform;
+        state.visualSize = screen;
         requestAnimationFrame(() => {
           fitNumberSize();
         });
@@ -196,10 +189,10 @@
       }
 
       state.lastPx = px;
-      state.visualSize = visual;
-      fitCanvasBuffer(canvas, visual);
-      fitCanvasBuffer(particleCanvas, visual);
-      particles.resize(visual, visual);
+      state.visualSize = screen;
+      fitCanvasBuffer(canvas, screen);
+      fitCanvasBuffer(particleCanvas, screen);
+      particles.resize(screen, screen);
       requestAnimationFrame(() => {
         fitNumberSize();
       });
@@ -239,18 +232,19 @@
       const clientY = event.touches ? event.touches[0].clientY : event.clientY;
       const cssX = clientX - rect.left;
       const cssY = clientY - rect.top;
+      const width = Math.max(rect.width, 1);
+      const height = Math.max(rect.height, 1);
 
       return {
-        x: (cssX / Math.max(rect.width, 1)) * canvas.width,
-        y: (cssY / Math.max(rect.height, 1)) * canvas.height,
-        cssX: (cssX / Math.max(rect.width, 1)) * state.visualSize,
-        cssY: (cssY / Math.max(rect.height, 1)) * state.visualSize,
+        x: (cssX / width) * canvas.width,
+        y: (cssY / height) * canvas.height,
+        cssX,
+        cssY,
       };
     }
 
     function getBrushRadius() {
-      const visual = state.visualSize || config.layoutSize;
-      return visual * config.brushSizeRatio * getDpr();
+      return Math.max(canvas.width, 1) * config.brushSizeRatio;
     }
 
     function scratchAt(x, y) {
@@ -472,7 +466,7 @@
 
       const local = getLocalSize();
       const maxWidth = local * 0.68;
-      let size = Math.floor(local * 0.46);
+      let size = Math.floor(local * 0.42);
       revealNumber.style.fontSize = `${size}px`;
 
       while (revealNumber.scrollWidth > maxWidth && size > 8) {

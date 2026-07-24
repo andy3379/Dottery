@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/styles.css" />
   <link rel="stylesheet" href="/page-transition.css" />
   <script src="/page-transition-prep.js"></script>
+  <script src="/fullscreen-auto.js"></script>
 </head>
 <body>
   <div id="pageSheet" class="page-sheet" aria-hidden="true"></div>
@@ -24,6 +25,12 @@
   <img class="board-backdrop" id="boardDetailImage" alt="" hidden />
 
   <a class="home-link home-link--float" href="/shop" aria-label="home">←</a>
+  <div class="price-calc price-calc--board" id="priceCalc" hidden>
+    <div class="price-calc__session" id="priceCalcSession">
+      <span class="price-calc__code" id="priceCalcCode"></span>
+      <span class="price-calc__amount" id="priceCalcAmount"></span>
+    </div>
+  </div>
   <div class="board-progress" id="boardProgress"></div>
   <button type="button" class="fullscreen-btn" id="fullscreenBtn" aria-label="fullscreen" hidden>
     <svg class="fullscreen-btn__enter" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
@@ -68,6 +75,7 @@
   </div>
 
   <script src="/page-transition.js"></script>
+  <script src="/price-calc.js"></script>
   <script src="/scratch-texture.js"></script>
   <script src="/scratch-effects.js"></script>
   <script src="/scratch-card.js"></script>

@@ -13,6 +13,7 @@
   <link rel="stylesheet" href="/home.css" />
   <link rel="stylesheet" href="/page-transition.css" />
   <script src="/page-transition-prep.js"></script>
+  <script src="/fullscreen-auto.js"></script>
 </head>
 <body>
   <div id="pageSheet" class="page-sheet" aria-hidden="true"></div>
@@ -27,6 +28,19 @@
     <a class="shop-admin" href="/admin" aria-label="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.6 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.6a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09A1.65 1.65 0 0 0 15 4.6a1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1Z"/></svg>
     </a>
+
+    <div class="price-calc" id="priceCalc">
+      <button type="button" class="price-calc__start" id="priceCalcStart" aria-label="start">開始</button>
+      <div class="price-calc__session" id="priceCalcSession" hidden>
+        <span class="price-calc__code" id="priceCalcCode"></span>
+        <span class="price-calc__amount" id="priceCalcAmount"></span>
+        <button type="button" class="price-calc__end" id="priceCalcEnd" aria-label="end">結束</button>
+      </div>
+    </div>
+
+    <button type="button" class="shop-fullscreen" id="shopFullscreenBtn" aria-label="fullscreen" hidden>
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"/></svg>
+    </button>
 
     <div class="search-float" id="searchFloat">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="11" cy="11" r="7"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
@@ -49,7 +63,61 @@
     </main>
   </div>
   </div>
+
+  <div class="price-calc-confirm" id="priceCalcConfirm" hidden>
+    <div class="price-calc-confirm__dialog" role="dialog" aria-modal="true" aria-labelledby="priceCalcConfirmTitle">
+      <div class="price-calc-confirm__title" id="priceCalcConfirmTitle"></div>
+      <div class="price-calc-confirm__meta" id="priceCalcConfirmMeta" hidden>
+        <span class="price-calc-confirm__code" id="priceCalcConfirmCode"></span>
+        <span class="price-calc-confirm__amount" id="priceCalcConfirmAmount"></span>
+      </div>
+      <div class="price-calc-confirm__actions">
+        <button type="button" class="price-calc-confirm__cancel" id="priceCalcConfirmCancel" aria-label="cancel">✕</button>
+        <button type="button" class="price-calc-confirm__ok" id="priceCalcConfirmOk"></button>
+      </div>
+    </div>
+  </div>
+
+  <div class="price-calc-bill" id="priceCalcBill" hidden>
+    <div class="price-calc-bill__dialog" role="dialog" aria-modal="true" aria-labelledby="priceCalcBillCode">
+      <div class="price-calc-bill__head">
+        <span class="price-calc-bill__code" id="priceCalcBillCode"></span>
+        <span class="price-calc-bill__amount" id="priceCalcBillAmount"></span>
+      </div>
+      <div class="price-calc-bill__count" id="priceCalcBillCount"></div>
+      <div class="price-calc-bill__list" id="priceCalcBillList"></div>
+      <div class="price-calc-bill__actions" id="priceCalcBillActions">
+        <button type="button" class="price-calc-bill__cancel" id="priceCalcBillCancel" aria-label="cancel">✕</button>
+        <button type="button" class="price-calc-bill__ok" id="priceCalcBillOk">結束</button>
+      </div>
+      <div class="price-calc-pin" id="priceCalcPin" hidden>
+        <div class="price-calc-pin__dots" id="priceCalcPinDots" aria-hidden="true">
+          <span class="price-calc-pin__dot"></span>
+          <span class="price-calc-pin__dot"></span>
+          <span class="price-calc-pin__dot"></span>
+          <span class="price-calc-pin__dot"></span>
+        </div>
+        <div class="price-calc-pin__pad" id="priceCalcPinPad">
+          <button type="button" class="price-calc-pin__key" data-pin="1">1</button>
+          <button type="button" class="price-calc-pin__key" data-pin="2">2</button>
+          <button type="button" class="price-calc-pin__key" data-pin="3">3</button>
+          <button type="button" class="price-calc-pin__key" data-pin="4">4</button>
+          <button type="button" class="price-calc-pin__key" data-pin="5">5</button>
+          <button type="button" class="price-calc-pin__key" data-pin="6">6</button>
+          <button type="button" class="price-calc-pin__key" data-pin="7">7</button>
+          <button type="button" class="price-calc-pin__key" data-pin="8">8</button>
+          <button type="button" class="price-calc-pin__key" data-pin="9">9</button>
+          <span class="price-calc-pin__spacer" aria-hidden="true"></span>
+          <button type="button" class="price-calc-pin__key" data-pin="0">0</button>
+          <button type="button" class="price-calc-pin__key price-calc-pin__key--del" data-pin="del" aria-label="delete">⌫</button>
+        </div>
+        <button type="button" class="price-calc-pin__back" id="priceCalcPinBack" aria-label="back">✕</button>
+      </div>
+    </div>
+  </div>
+
   <script src="/page-transition.js"></script>
+  <script src="/price-calc.js"></script>
   <script src="/home.js"></script>
 </body>
 </html>

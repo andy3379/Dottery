@@ -60,11 +60,15 @@
 
       const snap = state.scratchSnapshots.get(index);
       const scratchCard = state.scratchCards.get(index);
-      handle.numberEl.hidden = Boolean(scratchCard);
-      if (!scratchCard) return;
+      if (!scratchCard) {
+        handle.numberEl.hidden = false;
+        return;
+      }
+      handle.numberEl.hidden = true;
       await scratchCard.resize();
 
       if (scratchCard.isSealed()) {
+        if (number != null) scratchCard.setNumber(number);
         await scratchCard.resize();
         return;
       }
@@ -91,11 +95,14 @@
       const handle = engine.getSlotHandle(index);
       if (handle) {
         handle.slot.classList.add("is-visited");
+        if (!isSlotOpened(index)) {
+          handle.slot.classList.remove("is-opened");
+        }
         const baked = snap || state.scratchSnapshots.get(index);
         if (baked) {
           void bakeResidueToPreview(handle, baked);
         }
-        handle.preview.hidden = false;
+        handle.preview.hidden = Boolean(isSlotOpened(index));
       }
 
       scratchCard.disable();
@@ -126,11 +133,19 @@
       const handle = engine.getSlotHandle(index);
       if (handle) {
         handle.slot.classList.add("is-visited");
+        if (!isSlotOpened(index)) {
+          handle.slot.classList.remove("is-opened");
+        }
         const baked = sealed || state.scratchSnapshots.get(index);
         if (baked) {
           await bakeResidueToPreview(handle, baked);
         }
-        handle.preview.hidden = false;
+        handle.preview.hidden = Boolean(isSlotOpened(index));
+        if (isSlotOpened(index)) {
+          const number = claim?.number ?? getSlotData(index)?.number;
+          handle.numberEl.textContent = number == null ? "" : String(number);
+          handle.numberEl.hidden = Boolean(state.scratchCards.get(index));
+        }
       }
     }
 
@@ -168,11 +183,16 @@
         return;
       }
 
+      handle.slot.classList.remove("is-opened");
       if (!snap) return;
 
       handle.slot.classList.add("is-visited");
       await bakeResidueToPreview(handle, snap);
       handle.preview.hidden = false;
+      handle.numberEl.hidden = true;
+      if (number != null) {
+        handle.numberEl.textContent = String(number);
+      }
     }
 
     function invalidateResidueThumb(index) {
@@ -395,7 +415,10 @@
         foilImage: foil.imageUrl,
         getVisualSize: () => getVisualSlotSize(),
         onReveal: () => commitScratch(index),
-        onScratchStart: () => requireScratchCommit(),
+        onScratchStart: () => {
+          requireScratchCommit();
+          if (window.PriceCalc) PriceCalc.ensureStarted();
+        },
       });
       state.scratchCards.set(index, scratchCard);
       return scratchCard;
@@ -408,6 +431,12 @@
       }
 
       markSlotOpened(index, result.number);
+
+      const prevScratchedCount = Number(state.product.scratchedCount) || 0;
+      const nextScratchedCount = Number(result.scratchedCount);
+      const wasNewScratch =
+        Number.isFinite(nextScratchedCount) &&
+        nextScratchedCount > prevScratchedCount;
 
       const slots = state.product.slots.slice();
       const existing = slots.find((s) => s.slotIndex === index);
@@ -439,6 +468,20 @@
       );
 
       state.claims.set(index, result);
+
+      if (wasNewScratch && window.PriceCalc) {
+        PriceCalc.recordScratch(
+          state.product.id,
+          index,
+          state.product.price,
+          {
+            productName: state.product.name,
+            number: result.number,
+            prize: result.prize,
+            lastOneAwarded: result.lastOneAwarded,
+          }
+        );
+      }
 
       if (window.ScratchPersist) {
         ScratchPersist.removeSlot(state.product.id, index);
@@ -754,12 +797,18 @@
       if (!canUseFullscreen()) return;
       try {
         if (isFullscreen()) {
+          try {
+            sessionStorage.removeItem("dottery-fs");
+          } catch (_) {}
           if (document.exitFullscreen) {
             await document.exitFullscreen();
           } else if (document.webkitExitFullscreen) {
             document.webkitExitFullscreen();
           }
         } else {
+          try {
+            sessionStorage.setItem("dottery-fs", "1");
+          } catch (_) {}
           const el = document.documentElement;
           if (el.requestFullscreen) {
             await el.requestFullscreen();

@@ -32,6 +32,7 @@ const PUBLIC_FILES = [
   "page-transition-prep.js",
   "page-transition.js",
   "fullscreen-auto.js",
+  "price-calc.js",
   "board.html",
   "styles.css",
   "app.js",

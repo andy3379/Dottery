@@ -393,7 +393,7 @@
     }, 0);
 
     if (
-      product.status === "unpublished" &&
+      (product.status === "unpublished" || product.status === "archived") &&
       product.slots.length > 0 &&
       expected === product.totalDraws &&
       product.slots.length === product.totalDraws
@@ -1055,6 +1055,15 @@
       return json({ ok: true });
     }
 
+    if (method === "POST" && route === "verify-pin") {
+      var verifyBody = parseBody(init);
+      var verifyPin = String(verifyBody.password || "");
+      if (!/^\d{4}$/.test(verifyPin) || verifyPin !== getAdminPin(db)) {
+        return json({ error: "密碼錯誤" }, 401);
+      }
+      return json({ ok: true });
+    }
+
     if (method === "POST" && route === "logout") {
       setAuthed(false);
       return json({ ok: true });
@@ -1303,6 +1312,77 @@
         if (!target) return json({ error: "找不到商品" }, 404);
         if (target.status !== "published") return json({ error: "商品未上架" }, 400);
         target.status = "unpublished";
+        target.updatedAt = nowIso();
+        saveDb(db);
+        return json(buildProductDetail(db, target.id, { includeSlots: true, revealAll: true }));
+      }
+
+      if (method === "POST" && action === "duplicate") {
+        if (!target) return json({ error: "找不到商品" }, 404);
+        var dupStamp = nowIso();
+        var prizeIdMap = {};
+        var clonedPrizes = (target.prizes || []).map(function (prize) {
+          var newPrizeId = makeId(10);
+          prizeIdMap[prize.id] = newPrizeId;
+          return {
+            id: newPrizeId,
+            grade: prize.grade,
+            name: prize.name,
+            image: prize.image,
+            quantity: prize.quantity,
+            cost: Number(prize.cost) || 0,
+            isLastOne: Boolean(prize.isLastOne),
+            sortOrder: prize.sortOrder,
+          };
+        });
+        var baseName = String(target.name || "").trim();
+        var cloned = {
+          id: makeId(10),
+          name: baseName ? baseName + " 副本" : "",
+          description: target.description || "",
+          coverImage: target.coverImage || "",
+          detailImage: target.detailImage || "",
+          price: Number(target.price) || 0,
+          category: target.category || "",
+          totalDraws: Number(target.totalDraws) || 12,
+          status: "draft",
+          theme: target.theme || "light",
+          foilPreset: target.foilPreset || "silver",
+          foilImage: target.foilImage || "",
+          showRemaining: target.showRemaining !== false,
+          publishedAt: null,
+          createdAt: dupStamp,
+          updatedAt: dupStamp,
+          prizes: clonedPrizes,
+          slots: [],
+          slotDrafts: (target.slotDrafts || []).map(function (draft) {
+            return {
+              slotIndex: draft.slotIndex,
+              number: draft.number,
+              prizeId: prizeIdMap[draft.prizeId] || draft.prizeId,
+            };
+          }),
+        };
+        db.products.push(cloned);
+        saveDb(db);
+        return json(buildProductDetail(db, cloned.id, { includeSlots: true, revealAll: true }), 201);
+      }
+
+      if (method === "POST" && action === "archive") {
+        if (!target) return json({ error: "找不到商品" }, 404);
+        if (target.status === "published") return json({ error: "請先下架再封存" }, 400);
+        if (target.status === "archived") return json({ error: "商品已封存" }, 400);
+        target.status = "archived";
+        target.updatedAt = nowIso();
+        saveDb(db);
+        return json(buildProductDetail(db, target.id, { includeSlots: true, revealAll: true }));
+      }
+
+      if (method === "POST" && action === "unarchive") {
+        if (!target) return json({ error: "找不到商品" }, 404);
+        if (target.status !== "archived") return json({ error: "商品未封存" }, 400);
+        target.status =
+          Array.isArray(target.slots) && target.slots.length > 0 ? "unpublished" : "draft";
         target.updatedAt = nowIso();
         saveDb(db);
         return json(buildProductDetail(db, target.id, { includeSlots: true, revealAll: true }));

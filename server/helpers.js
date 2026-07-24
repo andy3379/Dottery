@@ -4,7 +4,7 @@ const { nanoid } = require("nanoid");
 const { computeEconomics } = require("../admin/economics");
 const PrizeNumberSpec = require("../admin/prize-number-spec");
 
-const STATUSES = ["draft", "published", "unpublished"];
+const STATUSES = ["draft", "published", "unpublished", "archived"];
 const THEMES = ["light", "warm", "cool", "dark", "rose"];
 const FOIL_PRESETS = ["silver", "gold", "color"];
 const DRAW_MODES = ["shuffle", "manual"];
@@ -528,7 +528,10 @@ function publishProduct(db, productId) {
     .prepare(`SELECT COUNT(*) AS count FROM slots WHERE product_id = ?`)
     .get(productId).count;
 
-  if (product.status === "unpublished" && existingSlots > 0) {
+  if (
+    (product.status === "unpublished" || product.status === "archived") &&
+    existingSlots > 0
+  ) {
     const prizeRows = db
       .prepare(`SELECT * FROM prizes WHERE product_id = ? ORDER BY sort_order ASC`)
       .all(productId)
@@ -1236,6 +1239,149 @@ function deleteScratchSnapshot(db, productId, slotIndex) {
   );
 }
 
+function duplicateProduct(db, productId) {
+  const source = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  if (!source) {
+    return { error: "找不到商品", status: 404 };
+  }
+
+  const newId = createProductId();
+  const stamp = nowIso();
+  const baseName = String(source.name || "").trim();
+  const nextName = baseName ? `${baseName} 副本` : "";
+
+  const prizeRows = db
+    .prepare(`SELECT * FROM prizes WHERE product_id = ? ORDER BY sort_order ASC`)
+    .all(productId);
+  const draftRows = db
+    .prepare(
+      `SELECT slot_index, number, prize_id FROM slot_drafts WHERE product_id = ? ORDER BY slot_index ASC`
+    )
+    .all(productId);
+
+  const prizeIdMap = {};
+  prizeRows.forEach((prize) => {
+    prizeIdMap[prize.id] = createPrizeId();
+  });
+
+  const insertPrize = db.prepare(
+    `INSERT INTO prizes (id, product_id, grade, name, image, quantity, cost, is_last_one, sort_order)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
+  );
+  const insertDraft = db.prepare(
+    `INSERT INTO slot_drafts (product_id, slot_index, number, prize_id)
+     VALUES (?, ?, ?, ?)`
+  );
+
+  const tx = db.transaction(() => {
+    db.prepare(
+      `INSERT INTO products (
+        id, name, description, cover_image, detail_image, price, category,
+        total_draws, cols, status, theme, foil_preset, foil_image,
+        show_remaining, schedule_enabled, schedule_start, schedule_end,
+        draw_mode, sort_order, soldout_visibility,
+        published_at, created_at, updated_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'draft', ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, ?, ?)`
+    ).run(
+      newId,
+      nextName,
+      source.description,
+      source.cover_image,
+      source.detail_image || "",
+      source.price,
+      source.category,
+      source.total_draws,
+      source.cols,
+      source.theme,
+      source.foil_preset,
+      source.foil_image,
+      source.show_remaining,
+      source.schedule_enabled || 0,
+      source.schedule_start || null,
+      source.schedule_end || null,
+      source.draw_mode || "shuffle",
+      source.sort_order || 0,
+      source.soldout_visibility || "show_soldout",
+      stamp,
+      stamp
+    );
+
+    prizeRows.forEach((prize) => {
+      insertPrize.run(
+        prizeIdMap[prize.id],
+        newId,
+        prize.grade,
+        prize.name,
+        prize.image,
+        prize.quantity,
+        prize.cost || 0,
+        prize.is_last_one,
+        prize.sort_order
+      );
+    });
+
+    draftRows.forEach((draft) => {
+      const mappedPrizeId = prizeIdMap[draft.prize_id];
+      if (!mappedPrizeId) return;
+      insertDraft.run(newId, draft.slot_index, draft.number, mappedPrizeId);
+    });
+  });
+
+  tx();
+  return {
+    product: buildProductDetail(db, newId, {
+      includeSlots: true,
+      revealAll: true,
+      includeSlotDrafts: true,
+    }),
+  };
+}
+
+function archiveProduct(db, productId) {
+  const product = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  if (!product) {
+    return { error: "找不到商品", status: 404 };
+  }
+  if (product.status === "published") {
+    return { error: "請先下架再封存", status: 400 };
+  }
+  if (product.status === "archived") {
+    return { error: "商品已封存", status: 400 };
+  }
+
+  db.prepare(`UPDATE products SET status = 'archived', updated_at = ? WHERE id = ?`).run(
+    nowIso(),
+    productId
+  );
+  return {
+    product: buildProductDetail(db, productId, { includeSlots: true, revealAll: true }),
+  };
+}
+
+function unarchiveProduct(db, productId) {
+  const product = db.prepare(`SELECT * FROM products WHERE id = ?`).get(productId);
+  if (!product) {
+    return { error: "找不到商品", status: 404 };
+  }
+  if (product.status !== "archived") {
+    return { error: "商品未封存", status: 400 };
+  }
+
+  const existingSlots = db
+    .prepare(`SELECT COUNT(*) AS count FROM slots WHERE product_id = ?`)
+    .get(productId).count;
+  const nextStatus = existingSlots > 0 ? "unpublished" : "draft";
+
+  db.prepare(`UPDATE products SET status = ?, updated_at = ? WHERE id = ?`).run(
+    nextStatus,
+    nowIso(),
+    productId
+  );
+  return {
+    product: buildProductDetail(db, productId, { includeSlots: true, revealAll: true }),
+  };
+}
+
 module.exports = {
   STATUSES,
   THEMES,
@@ -1264,6 +1410,9 @@ module.exports = {
   validateManualSlots,
   buildSlotDraftsFromPrizeSpecs,
   publishProduct,
+  duplicateProduct,
+  archiveProduct,
+  unarchiveProduct,
   resetBoard,
   claimSlot,
   scratchSlot,

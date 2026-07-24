@@ -138,11 +138,13 @@
     const colors = ["#d4d4d4", "#b8b8b8", "#a3a3a3", "#8f8f8f", "#c9c9c9"];
 
     function resize(displayWidth, displayHeight) {
-      const dpr = window.devicePixelRatio || 1;
-      canvas.width = Math.floor(displayWidth * dpr);
-      canvas.height = Math.floor(displayHeight * dpr);
-      canvas.style.width = `${displayWidth}px`;
-      canvas.style.height = `${displayHeight}px`;
+      const dpr = Math.min(window.devicePixelRatio || 1, 2);
+      canvas.width = Math.max(1, Math.floor(displayWidth * dpr));
+      canvas.height = Math.max(1, Math.floor(displayHeight * dpr));
+      canvas.style.width = "100%";
+      canvas.style.height = "100%";
+      canvas.style.inset = "0";
+      canvas.style.transform = "none";
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     }
 

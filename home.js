@@ -8,6 +8,31 @@
     heroDots: document.getElementById("heroDots"),
     heroPrev: document.getElementById("heroPrev"),
     heroNext: document.getElementById("heroNext"),
+    fullscreenBtn: document.getElementById("shopFullscreenBtn"),
+    priceCalcStart: document.getElementById("priceCalcStart"),
+    priceCalcSession: document.getElementById("priceCalcSession"),
+    priceCalcCode: document.getElementById("priceCalcCode"),
+    priceCalcAmount: document.getElementById("priceCalcAmount"),
+    priceCalcEnd: document.getElementById("priceCalcEnd"),
+    priceCalcConfirm: document.getElementById("priceCalcConfirm"),
+    priceCalcConfirmTitle: document.getElementById("priceCalcConfirmTitle"),
+    priceCalcConfirmMeta: document.getElementById("priceCalcConfirmMeta"),
+    priceCalcConfirmCode: document.getElementById("priceCalcConfirmCode"),
+    priceCalcConfirmAmount: document.getElementById("priceCalcConfirmAmount"),
+    priceCalcConfirmCancel: document.getElementById("priceCalcConfirmCancel"),
+    priceCalcConfirmOk: document.getElementById("priceCalcConfirmOk"),
+    priceCalcBill: document.getElementById("priceCalcBill"),
+    priceCalcBillCode: document.getElementById("priceCalcBillCode"),
+    priceCalcBillAmount: document.getElementById("priceCalcBillAmount"),
+    priceCalcBillCount: document.getElementById("priceCalcBillCount"),
+    priceCalcBillList: document.getElementById("priceCalcBillList"),
+    priceCalcBillActions: document.getElementById("priceCalcBillActions"),
+    priceCalcBillCancel: document.getElementById("priceCalcBillCancel"),
+    priceCalcBillOk: document.getElementById("priceCalcBillOk"),
+    priceCalcPin: document.getElementById("priceCalcPin"),
+    priceCalcPinDots: document.getElementById("priceCalcPinDots"),
+    priceCalcPinPad: document.getElementById("priceCalcPinPad"),
+    priceCalcPinBack: document.getElementById("priceCalcPinBack"),
   };
 
   const state = {
@@ -27,6 +52,7 @@
 
   const heroCardPool = new Map();
   let metaSwitchTimer = null;
+  let heroAnimClearTimer = null;
 
   function isDone(product) {
     return Number(product.remainingDraws) <= 0;
@@ -116,21 +142,25 @@
     }
   }
 
-  function buildHeroMeta(product) {
-    els.heroMeta.replaceChildren();
-
-    const name = document.createElement("div");
-    name.className = "hero__meta-name";
+  function ensureHeroMetaShell(product) {
+    let name = els.heroMeta.querySelector(".hero__meta-name");
+    if (!name) {
+      els.heroMeta.replaceChildren();
+      name = document.createElement("div");
+      name.className = "hero__meta-name";
+      els.heroMeta.appendChild(name);
+    }
     name.textContent = product.name || product.id;
-    els.heroMeta.appendChild(name);
 
-    if (state.settings.showProgress) {
-      const { remaining, total } = heroRemaining(product);
-      const ratio = heroProgressRatio(product);
-      const done = isDone(product);
+    let dash = els.heroMeta.querySelector(".hero__meta-dash");
+    if (!state.settings.showProgress) {
+      if (dash) dash.remove();
+      return;
+    }
 
-      const dash = document.createElement("div");
-      dash.className = `hero__meta-dash${done ? " is-done" : ""}`;
+    if (!dash) {
+      dash = document.createElement("div");
+      dash.className = "hero__meta-dash";
 
       const row = document.createElement("div");
       row.className = "hero__meta-dash-row";
@@ -145,32 +175,28 @@
 
       const pct = document.createElement("span");
       pct.className = "hero__meta-dash-pct";
-      pct.textContent = formatPct(ratio);
       pctWrap.appendChild(pct);
-
       row.appendChild(pctWrap);
 
       const frac = document.createElement("span");
       frac.className = "hero__meta-dash-frac";
-      frac.textContent = `${remaining}/${total}`;
       row.appendChild(frac);
-
       dash.appendChild(row);
 
       const track = document.createElement("div");
       track.className = "hero__meta-dash-track";
       const fill = document.createElement("div");
-      fill.className = `hero__meta-dash-fill${ratio <= 0 ? " is-empty" : ""}`;
-      fill.style.width = `${ratio * 100}%`;
+      fill.className = "hero__meta-dash-fill";
       const glow = document.createElement("span");
       glow.className = "hero__meta-dash-glow";
       glow.setAttribute("aria-hidden", "true");
       fill.appendChild(glow);
       track.appendChild(fill);
       dash.appendChild(track);
-
       els.heroMeta.appendChild(dash);
     }
+
+    syncHeroMetaProgress(product);
   }
 
   function renderHeroMeta(product) {
@@ -194,7 +220,7 @@
     }
 
     const revealMeta = () => {
-      buildHeroMeta(product);
+      ensureHeroMetaShell(product);
       state.metaProductId = productId;
       els.heroMeta.hidden = false;
       requestAnimationFrame(() => {
@@ -212,7 +238,7 @@
       metaSwitchTimer = setTimeout(() => {
         revealMeta();
         metaSwitchTimer = null;
-      }, 200);
+      }, 160);
       return;
     }
 
@@ -269,11 +295,10 @@
     const step = abs <= 1 ? 88 : 150;
     const x = Math.sign(clamped) * (abs <= 1 ? step : 88 + (abs - 1) * 62);
     const scale = 1 - abs * 0.14;
-    const rotate = clamped * -3;
     const opacity = count <= 1 ? 1 : Math.max(0, 1 - abs * 0.38);
     const z = 10 - abs;
     return {
-      transform: `translateX(-50%) translateX(${x}%) scale(${scale}) rotateY(${rotate}deg)`,
+      transform: `translate3d(calc(-50% + ${x}%), 0, 0) scale(${scale})`,
       opacity,
       zIndex: z,
     };
@@ -340,7 +365,12 @@
       price.className = "hero-card__price";
       card.appendChild(price);
     }
-    price.textContent = formatPrice(product.price);
+    price.replaceChildren();
+    price.append(formatPrice(product.price));
+    const unit = document.createElement("span");
+    unit.className = "hero-card__price-unit";
+    unit.textContent = "/抽";
+    price.append(unit);
   }
 
   function isPlayable(product) {
@@ -371,50 +401,37 @@
       card.appendChild(link);
     }
     link.href = boardHref(product);
-    if (window.PageTransition?.prefetchRoute) {
-      window.PageTransition.prefetchRoute(link.href);
+    if (offset === 0 && window.PageTransition?.prefetchRoute) {
+      const href = link.href;
+      const schedule =
+        typeof requestIdleCallback === "function"
+          ? (fn) => requestIdleCallback(fn, { timeout: 600 })
+          : (fn) => setTimeout(fn, 120);
+      schedule(() => window.PageTransition.prefetchRoute(href));
     }
   }
 
-  function heroClipTransform(isCenter) {
-    const scale = isCenter ? 1 : 1.03;
-    return `translateZ(0) scale(${scale})`;
+  function applyHeroCardStyle(card, t, offset) {
+    card.style.transform = t.transform;
+    card.style.opacity = String(t.opacity);
+    card.style.zIndex = String(t.zIndex);
+    card.style.pointerEvents = Math.abs(offset) > 1 ? "none" : "auto";
+    card.dataset.heroOffset = String(offset);
   }
 
   function applyHeroCardLayout(card, product, offset, count, animate) {
     const t = heroCardTransform(offset, count);
     const isCenter = offset === 0;
-    const hadCenter = card.classList.contains("hero-card--center");
-    const hadSide = card.classList.contains("hero-card--side");
-    const roleChanged =
-      (isCenter && hadSide) || (!isCenter && hadCenter);
-    const clip = card.querySelector(":scope > .hero-card__clip");
-
-    if (!animate) {
-      card.style.transition = "none";
-      if (clip) clip.style.transition = "none";
-    } else if (roleChanged && clip) {
-      clip.style.transition = "none";
-      clip.style.transform = heroClipTransform(hadCenter);
-    }
 
     card.classList.toggle("hero-card--center", isCenter);
     card.classList.toggle("hero-card--side", !isCenter);
+    card.classList.toggle("is-animating", Boolean(animate));
 
-    if (animate) {
-      void card.offsetWidth;
-      card.style.transition = "";
-      if (clip && roleChanged) {
-        clip.style.transition = "";
-        clip.style.transform = "";
-      }
+    if (!animate) {
+      card.style.transition = "none";
     }
 
-    card.style.transform = t.transform;
-    card.style.opacity = String(t.opacity);
-    card.style.zIndex = String(t.zIndex);
-    card.style.pointerEvents = Math.abs(offset) > 1 ? "none" : "auto";
-
+    applyHeroCardStyle(card, t, offset);
     ensureHeroCardMedia(card, product);
     ensureHeroCardPrice(card, product);
     bindHeroCardClick(card, product, offset, count);
@@ -422,13 +439,13 @@
     if (!animate) {
       void card.offsetWidth;
       card.style.transition = "";
-      if (clip) {
-        clip.style.transition = "";
-        clip.style.transform = "";
-      }
     }
+  }
 
-    card.dataset.heroOffset = String(offset);
+  function clearHeroAnimating() {
+    for (const card of heroCardPool.values()) {
+      card.classList.remove("is-animating");
+    }
   }
 
   function createHeroCard(product) {
@@ -451,6 +468,11 @@
     const list = heroList();
     const track = getHeroTrack();
     const animate = state.heroReady && !options.instant;
+
+    if (heroAnimClearTimer) {
+      clearTimeout(heroAnimClearTimer);
+      heroAnimClearTimer = null;
+    }
 
     if (list.length === 0) {
       clearHeroStage(track);
@@ -492,6 +514,7 @@
     const visibleIds = new Set();
     const placedIds = new Set();
     const step = options.instant ? 0 : state.heroStep;
+    const pending = [];
 
     for (const offset of heroOffsetOrder(range)) {
       const index = ((state.heroIndex + offset) % count + count) % count;
@@ -506,27 +529,10 @@
       if (isNew) {
         card = createHeroCard(product);
         heroCardPool.set(product.id, card);
-        if (animate) {
-          const enterBias = step !== 0 ? step * 0.35 : Math.sign(offset || 1) * 0.35;
-          const enterFrom = heroCardTransform(offset + enterBias, count);
-          card.style.transition = "none";
-          card.style.transform = enterFrom.transform;
-          card.style.opacity = "0";
-        }
         track.appendChild(card);
-        if (animate) {
-          void card.offsetWidth;
-          card.style.transition = "";
-          requestAnimationFrame(() => {
-            applyHeroCardLayout(card, product, offset, count, true);
-          });
-        } else {
-          applyHeroCardLayout(card, product, offset, count, false);
-        }
-        continue;
       }
 
-      applyHeroCardLayout(card, product, offset, count, animate);
+      pending.push({ card, product, offset, isNew });
     }
 
     for (const [productId, card] of heroCardPool) {
@@ -534,6 +540,35 @@
         card.remove();
         heroCardPool.delete(productId);
       }
+    }
+
+    if (animate) {
+      for (const item of pending) {
+        if (!item.isNew) continue;
+        const enterBias = step !== 0 ? step * 0.35 : Math.sign(item.offset || 1) * 0.35;
+        const enterFrom = heroCardTransform(item.offset + enterBias, count);
+        item.card.style.transition = "none";
+        item.card.style.transform = enterFrom.transform;
+        item.card.style.opacity = "0";
+        item.card.classList.add("is-animating");
+      }
+
+      void track.offsetWidth;
+
+      for (const item of pending) {
+        item.card.style.transition = "";
+        applyHeroCardLayout(item.card, item.product, item.offset, count, true);
+      }
+
+      heroAnimClearTimer = setTimeout(() => {
+        clearHeroAnimating();
+        heroAnimClearTimer = null;
+      }, 520);
+    } else {
+      for (const item of pending) {
+        applyHeroCardLayout(item.card, item.product, item.offset, count, false);
+      }
+      clearHeroAnimating();
     }
 
     const single = count <= 1;
@@ -625,7 +660,417 @@
     renderHeroStage({ instant: true });
   });
 
+  function getFullscreenElement() {
+    return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function canUseFullscreen() {
+    const el = document.documentElement;
+    return Boolean(
+      el.requestFullscreen ||
+        el.webkitRequestFullscreen ||
+        el.webkitRequestFullScreen
+    );
+  }
+
+  function isFullscreen() {
+    return Boolean(getFullscreenElement());
+  }
+
+  function syncShopFullscreenBtn() {
+    if (!els.fullscreenBtn || !canUseFullscreen()) {
+      if (els.fullscreenBtn) els.fullscreenBtn.hidden = true;
+      return;
+    }
+    els.fullscreenBtn.hidden = isFullscreen();
+  }
+
+  async function enterShopFullscreen() {
+    if (!canUseFullscreen() || isFullscreen()) return;
+    try {
+      sessionStorage.setItem("dottery-fs", "1");
+    } catch (_) {}
+    const el = document.documentElement;
+    try {
+      if (el.requestFullscreen) {
+        await el.requestFullscreen();
+      } else if (el.webkitRequestFullscreen) {
+        el.webkitRequestFullscreen();
+      } else if (el.webkitRequestFullScreen) {
+        el.webkitRequestFullScreen();
+      }
+    } catch (_) {}
+    syncShopFullscreenBtn();
+  }
+
+  if (els.fullscreenBtn && canUseFullscreen()) {
+    syncShopFullscreenBtn();
+    els.fullscreenBtn.addEventListener("click", (event) => {
+      event.preventDefault();
+      enterShopFullscreen();
+    });
+    els.fullscreenBtn.addEventListener("touchend", (event) => {
+      event.preventDefault();
+      enterShopFullscreen();
+    });
+    document.addEventListener("fullscreenchange", syncShopFullscreenBtn);
+    document.addEventListener("webkitfullscreenchange", syncShopFullscreenBtn);
+  }
+
   /* ---------------- Bootstrap ---------------- */
+
+  function renderPriceCalc(session) {
+    const active = Boolean(session && session.active);
+    if (els.priceCalcStart) els.priceCalcStart.hidden = active;
+    if (els.priceCalcSession) els.priceCalcSession.hidden = !active;
+    if (!active) return;
+    if (els.priceCalcCode) els.priceCalcCode.textContent = session.code;
+    if (els.priceCalcAmount) {
+      els.priceCalcAmount.textContent = window.PriceCalc
+        ? PriceCalc.formatAmount(session.total)
+        : `$${(Number(session.total) || 0).toFixed(2)}`;
+    }
+  }
+
+  let priceCalcPending = null;
+
+  function closePriceCalcConfirm() {
+    priceCalcPending = null;
+    if (els.priceCalcConfirm) els.priceCalcConfirm.hidden = true;
+  }
+
+  function closePriceCalcBill() {
+    closePriceCalcPin();
+    if (els.priceCalcBill) els.priceCalcBill.hidden = true;
+    if (els.priceCalcBillList) els.priceCalcBillList.replaceChildren();
+  }
+
+  function createBillPrizeRow(prize, meta) {
+    const row = document.createElement("div");
+    row.className = "price-calc-bill__item";
+
+    if (prize && prize.image) {
+      const img = document.createElement("img");
+      img.className = "price-calc-bill__thumb";
+      img.src = prize.image;
+      img.alt = "";
+      row.appendChild(img);
+    } else {
+      const placeholder = document.createElement("span");
+      placeholder.className =
+        "price-calc-bill__thumb price-calc-bill__thumb--empty";
+      placeholder.setAttribute("aria-hidden", "true");
+      row.appendChild(placeholder);
+    }
+
+    const body = document.createElement("div");
+    body.className = "price-calc-bill__body";
+
+    if (prize && prize.grade) {
+      const grade = document.createElement("div");
+      grade.className = "price-calc-bill__grade";
+      grade.textContent = prize.grade;
+      body.appendChild(grade);
+    }
+
+    const name = document.createElement("div");
+    name.className = "price-calc-bill__name";
+    name.textContent = (prize && prize.name) || "—";
+    body.appendChild(name);
+
+    if (meta.productName) {
+      const product = document.createElement("div");
+      product.className = "price-calc-bill__product";
+      product.textContent = meta.productName;
+      body.appendChild(product);
+    }
+
+    if (meta.number != null && meta.number !== "") {
+      const number = document.createElement("div");
+      number.className = "price-calc-bill__number";
+      number.textContent = `#${meta.number}`;
+      body.appendChild(number);
+    }
+
+    row.appendChild(body);
+
+    const price = document.createElement("div");
+    price.className = "price-calc-bill__price";
+    price.textContent = meta.priceText || "";
+    row.appendChild(price);
+
+    return row;
+  }
+
+  const priceCalcPinState = {
+    digits: "",
+    submitting: false,
+    locked: false,
+  };
+
+  function syncPriceCalcPinDots() {
+    if (!els.priceCalcPinDots) return;
+    const dots = els.priceCalcPinDots.querySelectorAll(".price-calc-pin__dot");
+    dots.forEach((dot, index) => {
+      dot.classList.toggle("is-filled", index < priceCalcPinState.digits.length);
+    });
+  }
+
+  function shakePriceCalcPin() {
+    if (!els.priceCalcPinDots) return;
+    els.priceCalcPinDots.classList.remove("is-shake");
+    void els.priceCalcPinDots.offsetWidth;
+    els.priceCalcPinDots.classList.add("is-shake");
+  }
+
+  function closePriceCalcPin() {
+    priceCalcPinState.digits = "";
+    priceCalcPinState.submitting = false;
+    priceCalcPinState.locked = false;
+    syncPriceCalcPinDots();
+    if (els.priceCalcPinDots) els.priceCalcPinDots.classList.remove("is-shake");
+    if (els.priceCalcPin) els.priceCalcPin.hidden = true;
+    if (els.priceCalcBillActions) els.priceCalcBillActions.hidden = false;
+    if (els.priceCalcBillList) els.priceCalcBillList.hidden = false;
+  }
+
+  function openPriceCalcPin() {
+    priceCalcPinState.digits = "";
+    priceCalcPinState.submitting = false;
+    priceCalcPinState.locked = false;
+    syncPriceCalcPinDots();
+    if (els.priceCalcBillActions) els.priceCalcBillActions.hidden = true;
+    if (els.priceCalcBillList) els.priceCalcBillList.hidden = true;
+    if (els.priceCalcPin) els.priceCalcPin.hidden = false;
+  }
+
+  async function submitPriceCalcPin() {
+    if (priceCalcPinState.submitting || priceCalcPinState.locked) return;
+    if (priceCalcPinState.digits.length !== 4) return;
+
+    priceCalcPinState.submitting = true;
+    priceCalcPinState.locked = true;
+
+    try {
+      const res = await fetch("/api/admin/verify-pin", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password: priceCalcPinState.digits }),
+      });
+      if (!res.ok) throw new Error("bad pin");
+      if (!window.PriceCalc) return;
+      PriceCalc.end();
+      closePriceCalcBill();
+      renderPriceCalc(null);
+    } catch (_) {
+      shakePriceCalcPin();
+      window.setTimeout(() => {
+        priceCalcPinState.digits = "";
+        syncPriceCalcPinDots();
+        priceCalcPinState.submitting = false;
+        priceCalcPinState.locked = false;
+      }, 320);
+    }
+  }
+
+  function pushPriceCalcPinDigit(digit) {
+    if (priceCalcPinState.submitting || priceCalcPinState.locked) return;
+    if (priceCalcPinState.digits.length >= 4) return;
+    priceCalcPinState.digits += digit;
+    syncPriceCalcPinDots();
+    if (priceCalcPinState.digits.length === 4) {
+      submitPriceCalcPin();
+    }
+  }
+
+  function popPriceCalcPinDigit() {
+    if (priceCalcPinState.submitting || priceCalcPinState.locked) return;
+    if (!priceCalcPinState.digits.length) {
+      closePriceCalcPin();
+      return;
+    }
+    priceCalcPinState.digits = priceCalcPinState.digits.slice(0, -1);
+    syncPriceCalcPinDots();
+  }
+
+  function isPriceCalcPinOpen() {
+    return Boolean(els.priceCalcPin && !els.priceCalcPin.hidden);
+  }
+
+  function openPriceCalcBill(receipt) {
+    if (!els.priceCalcBill || !receipt) return;
+    closePriceCalcPin();
+
+    if (els.priceCalcBillCode) els.priceCalcBillCode.textContent = receipt.code;
+    if (els.priceCalcBillAmount) {
+      els.priceCalcBillAmount.textContent = PriceCalc.formatAmount(receipt.total);
+    }
+    if (els.priceCalcBillCount) {
+      els.priceCalcBillCount.textContent = `×${Number(receipt.scratchCount) || 0}`;
+    }
+
+    if (els.priceCalcBillList) {
+      els.priceCalcBillList.replaceChildren();
+      const items = Array.isArray(receipt.items) ? receipt.items : [];
+
+      if (!items.length) {
+        const empty = document.createElement("div");
+        empty.className = "price-calc-bill__empty";
+        empty.textContent = "—";
+        els.priceCalcBillList.appendChild(empty);
+      } else {
+        items.forEach((item) => {
+          const priceText = PriceCalc.formatAmount(item.unitPrice);
+          els.priceCalcBillList.appendChild(
+            createBillPrizeRow(item.prize, {
+              productName: item.productName,
+              number: item.number,
+              priceText: priceText,
+            })
+          );
+          if (item.lastOne) {
+            els.priceCalcBillList.appendChild(
+              createBillPrizeRow(item.lastOne, {
+                productName: item.productName,
+                priceText: "",
+              })
+            );
+          }
+        });
+      }
+    }
+
+    els.priceCalcBill.hidden = false;
+    if (els.priceCalcBillOk) els.priceCalcBillOk.focus();
+  }
+
+  function openPriceCalcConfirm(action) {
+    if (!window.PriceCalc || !els.priceCalcConfirm) return;
+    if (action === "end") {
+      const session = PriceCalc.get();
+      if (!session) return;
+      openPriceCalcBill(session);
+      return;
+    }
+
+    priceCalcPending = action;
+
+    if (els.priceCalcConfirmTitle) {
+      els.priceCalcConfirmTitle.textContent = "準備開始計費?";
+    }
+    if (els.priceCalcConfirmOk) {
+      els.priceCalcConfirmOk.textContent = "開始";
+    }
+    if (els.priceCalcConfirmMeta) {
+      els.priceCalcConfirmMeta.hidden = true;
+    }
+
+    els.priceCalcConfirm.hidden = false;
+    if (els.priceCalcConfirmOk) els.priceCalcConfirmOk.focus();
+  }
+
+  function confirmPriceCalcAction() {
+    if (!window.PriceCalc || !priceCalcPending) return;
+    const action = priceCalcPending;
+    closePriceCalcConfirm();
+    if (action === "start") {
+      renderPriceCalc(PriceCalc.start());
+    }
+  }
+
+  function confirmPriceCalcBill() {
+    openPriceCalcPin();
+  }
+
+  if (els.priceCalcStart) {
+    els.priceCalcStart.addEventListener("click", () => {
+      openPriceCalcConfirm("start");
+    });
+  }
+
+  if (els.priceCalcEnd) {
+    els.priceCalcEnd.addEventListener("click", () => {
+      openPriceCalcConfirm("end");
+    });
+  }
+
+  if (els.priceCalcConfirmCancel) {
+    els.priceCalcConfirmCancel.addEventListener("click", closePriceCalcConfirm);
+  }
+
+  if (els.priceCalcConfirmOk) {
+    els.priceCalcConfirmOk.addEventListener("click", confirmPriceCalcAction);
+  }
+
+  if (els.priceCalcConfirm) {
+    els.priceCalcConfirm.addEventListener("click", (event) => {
+      if (event.target === els.priceCalcConfirm) closePriceCalcConfirm();
+    });
+  }
+
+  if (els.priceCalcBillCancel) {
+    els.priceCalcBillCancel.addEventListener("click", closePriceCalcBill);
+  }
+
+  if (els.priceCalcBillOk) {
+    els.priceCalcBillOk.addEventListener("click", confirmPriceCalcBill);
+  }
+
+  if (els.priceCalcBill) {
+    els.priceCalcBill.addEventListener("click", (event) => {
+      if (event.target === els.priceCalcBill) closePriceCalcBill();
+    });
+  }
+
+  if (els.priceCalcPinPad) {
+    els.priceCalcPinPad.addEventListener("click", (event) => {
+      const key = event.target.closest("[data-pin]");
+      if (!key) return;
+      const value = key.getAttribute("data-pin");
+      if (value === "del") {
+        popPriceCalcPinDigit();
+        return;
+      }
+      if (/^\d$/.test(value)) pushPriceCalcPinDigit(value);
+    });
+  }
+
+  if (els.priceCalcPinBack) {
+    els.priceCalcPinBack.addEventListener("click", closePriceCalcPin);
+  }
+
+  document.addEventListener("keydown", (event) => {
+    if (isPriceCalcPinOpen()) {
+      if (event.key >= "0" && event.key <= "9") {
+        event.preventDefault();
+        pushPriceCalcPinDigit(event.key);
+        return;
+      }
+      if (event.key === "Backspace") {
+        event.preventDefault();
+        popPriceCalcPinDigit();
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        closePriceCalcPin();
+        return;
+      }
+    }
+
+    if (event.key !== "Escape") return;
+    if (els.priceCalcBill && !els.priceCalcBill.hidden) {
+      closePriceCalcBill();
+      return;
+    }
+    if (!els.priceCalcConfirm || els.priceCalcConfirm.hidden) return;
+    closePriceCalcConfirm();
+  });
+
+  if (window.PriceCalc) {
+    renderPriceCalc(PriceCalc.get());
+    PriceCalc.subscribe(renderPriceCalc);
+  }
 
   Promise.all([
     fetch("/api/settings").then((res) => res.json()),

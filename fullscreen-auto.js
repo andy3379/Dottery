@@ -1,10 +1,27 @@
 (function () {
   "use strict";
 
+  var STORAGE_KEY = "dottery-fs";
   var settled = false;
+  var leaving = false;
 
   function fullscreenElement() {
     return document.fullscreenElement || document.webkitFullscreenElement || null;
+  }
+
+  function wantsFullscreen() {
+    try {
+      return sessionStorage.getItem(STORAGE_KEY) === "1";
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function setWantsFullscreen(on) {
+    try {
+      if (on) sessionStorage.setItem(STORAGE_KEY, "1");
+      else sessionStorage.removeItem(STORAGE_KEY);
+    } catch (_e) {}
   }
 
   function requestFullscreen() {
@@ -16,8 +33,10 @@
   }
 
   function detach() {
+    document.removeEventListener("pointerdown", onGesture, true);
     document.removeEventListener("pointerup", onGesture, true);
     document.removeEventListener("click", onGesture, true);
+    document.removeEventListener("touchend", onGesture, true);
     document.removeEventListener("keydown", onGesture, true);
   }
 
@@ -28,12 +47,21 @@
 
   function onFullscreenChange() {
     if (fullscreenElement()) {
+      setWantsFullscreen(true);
       settle();
+      return;
+    }
+    if (!leaving) {
+      setWantsFullscreen(false);
     }
   }
 
   function onGesture(event) {
     if (settled || !event.isTrusted) return;
+    if (!wantsFullscreen()) {
+      settle();
+      return;
+    }
     if (fullscreenElement()) {
       settle();
       return;
@@ -46,9 +74,32 @@
     } catch (_e) {}
   }
 
+  function markLeaving() {
+    leaving = true;
+    if (fullscreenElement() || wantsFullscreen()) {
+      setWantsFullscreen(true);
+    }
+  }
+
+  function armRestore() {
+    if (settled || !wantsFullscreen() || fullscreenElement()) return;
+    document.addEventListener("pointerdown", onGesture, true);
+    document.addEventListener("pointerup", onGesture, true);
+    document.addEventListener("click", onGesture, true);
+    document.addEventListener("touchend", onGesture, true);
+    document.addEventListener("keydown", onGesture, true);
+  }
+
+  window.addEventListener("dottery:before-page-leave", markLeaving);
+  window.addEventListener("pagehide", markLeaving);
+
   document.addEventListener("fullscreenchange", onFullscreenChange);
   document.addEventListener("webkitfullscreenchange", onFullscreenChange);
-  document.addEventListener("pointerup", onGesture, true);
-  document.addEventListener("click", onGesture, true);
-  document.addEventListener("keydown", onGesture, true);
+
+  if (fullscreenElement()) {
+    setWantsFullscreen(true);
+    settle();
+  } else {
+    armRestore();
+  }
 })();

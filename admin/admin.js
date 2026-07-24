@@ -49,6 +49,10 @@
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 20h11M5 20V8h9v12"/><path d="M5 12h9M5 16h9"/><path d="M19 7v10M16.5 14.5L19 17l2.5-2.5"/></svg>',
     trash:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M3 6h18M8 6V4h8v2M19 6l-1 14H6L5 6"/></svg>',
+    copy:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><rect x="9" y="9" width="13" height="13" rx="2"/><path d="M5 15H4a2 2 0 01-2-2V4a2 2 0 012-2h9a2 2 0 012 2v1"/></svg>',
+    archive:
+      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round"><path d="M21 8v13H3V8M1 3h22v5H1zM10 12h4"/></svg>',
     close:
       '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round"><path d="M18 6L6 18M6 6l12 12"/></svg>',
   };
@@ -58,6 +62,7 @@
     view: "dashboard",
     listPage: 1,
     products: [],
+    selectedProductIds: new Set(),
     product: null,
     dashboard: null,
     dashboardPeriodMode: "7",
@@ -235,6 +240,7 @@
       draft: "草稿",
       published: "上架",
       unpublished: "下架",
+      archived: "封存",
     };
     return el("span", {
       className: `badge badge--${status}`,
@@ -855,6 +861,125 @@
     state.products = data.products;
     const totalPages = Math.max(1, Math.ceil(state.products.length / PAGE_SIZE));
     if (state.listPage > totalPages) state.listPage = totalPages;
+    const validIds = new Set(state.products.map((p) => p.id));
+    state.selectedProductIds = new Set(
+      [...state.selectedProductIds].filter((id) => validIds.has(id))
+    );
+  }
+
+  function clearProductSelection() {
+    state.selectedProductIds = new Set();
+  }
+
+  function toggleProductSelection(id, selected) {
+    const next = new Set(state.selectedProductIds);
+    if (selected) next.add(id);
+    else next.delete(id);
+    state.selectedProductIds = next;
+  }
+
+  function setPageProductSelection(pageItems, selected) {
+    const next = new Set(state.selectedProductIds);
+    pageItems.forEach((product) => {
+      if (selected) next.add(product.id);
+      else next.delete(product.id);
+    });
+    state.selectedProductIds = next;
+  }
+
+  function selectedProducts() {
+    return state.products.filter((p) => state.selectedProductIds.has(p.id));
+  }
+
+  async function runBulkProductAction(actionKey) {
+    const items = selectedProducts();
+    if (!items.length) return;
+
+    const configs = {
+      publish: {
+        action: "上架",
+        filter: (p) => p.status !== "published",
+        skipReason: "已上架",
+        run: (id) => api(`/products/${id}/publish`, { method: "POST" }),
+        done: "已上架",
+      },
+      unpublish: {
+        action: "下架",
+        danger: true,
+        filter: (p) => p.status === "published",
+        skipReason: "未上架",
+        run: (id) => api(`/products/${id}/unpublish`, { method: "POST" }),
+        done: "已下架",
+      },
+      archive: {
+        action: "封存",
+        filter: (p) => p.status !== "published" && p.status !== "archived",
+        skipReason: "無法封存",
+        run: (id) => api(`/products/${id}/archive`, { method: "POST" }),
+        done: "已封存",
+      },
+      unarchive: {
+        action: "取消封存",
+        filter: (p) => p.status === "archived",
+        skipReason: "未封存",
+        run: (id) => api(`/products/${id}/unarchive`, { method: "POST" }),
+        done: "已取消封存",
+      },
+      duplicate: {
+        action: "複製",
+        filter: () => true,
+        run: (id) => api(`/products/${id}/duplicate`, { method: "POST" }),
+        done: "已複製",
+      },
+      delete: {
+        action: "刪除",
+        danger: true,
+        filter: (p) => p.status !== "published",
+        skipReason: "上架中",
+        run: (id) => api(`/products/${id}`, { method: "DELETE" }),
+        done: "已刪除",
+      },
+    };
+
+    const config = configs[actionKey];
+    if (!config) return;
+
+    const targets = items.filter(config.filter);
+    if (!targets.length) {
+      state.error = `選取的商品無法${config.action}`;
+      render();
+      return;
+    }
+
+    const ok = await confirmAction({
+      target: `${targets.length} 項商品`,
+      action: config.action,
+      danger: Boolean(config.danger),
+    });
+    if (!ok) return;
+
+    state.error = "";
+    let success = 0;
+    let failed = 0;
+    for (const product of targets) {
+      try {
+        await config.run(product.id);
+        success += 1;
+      } catch (_err) {
+        failed += 1;
+      }
+    }
+
+    clearProductSelection();
+    await loadProducts();
+    if (failed && success) {
+      state.error = `${config.done} ${success} 項，失敗 ${failed} 項`;
+    } else if (failed) {
+      state.error = `${config.action}失敗`;
+    } else {
+      showNotice(`${config.done} ${success} 項`);
+    }
+    render();
   }
 
   function formatDateInput(date) {
@@ -1634,6 +1759,20 @@
       (state.listPage - 1) * PAGE_SIZE,
       state.listPage * PAGE_SIZE
     );
+    const selectedCount = state.selectedProductIds.size;
+    const pageSelectedCount = pageItems.filter((p) =>
+      state.selectedProductIds.has(p.id)
+    ).length;
+    const allPageSelected = pageItems.length > 0 && pageSelectedCount === pageItems.length;
+    const somePageSelected = pageSelectedCount > 0 && !allPageSelected;
+    const selectedItems = selectedProducts();
+    const canBulkPublish = selectedItems.some((p) => p.status !== "published");
+    const canBulkUnpublish = selectedItems.some((p) => p.status === "published");
+    const canBulkArchive = selectedItems.some(
+      (p) => p.status !== "published" && p.status !== "archived"
+    );
+    const canBulkUnarchive = selectedItems.some((p) => p.status === "archived");
+    const canBulkDelete = selectedItems.some((p) => p.status !== "published");
 
     const rows = pageItems.map((product) => {
       const done =
@@ -1645,10 +1784,10 @@
         ? (Number(product.scratchedCount) / Number(product.totalDraws)) * 100
         : 0;
       const isDraft = product.status === "draft";
-      const paused = product.status === "unpublished";
-
+      const paused = product.status === "unpublished" || product.status === "archived";
       const isPublished = product.status === "published";
       const canDelete = !isPublished;
+      const isSelected = state.selectedProductIds.has(product.id);
 
       const actions = el("div", { className: "row-actions" }, [
         linkAction("編輯", "", () => goEdit(product.id), { icon: "edit" }),
@@ -1737,7 +1876,20 @@
             ]),
           ]);
 
-      return el("tr", { className: done ? "is-done-row" : "" }, [
+      const selectCell = el("td", { className: "table__select" }, [
+        (() => {
+          const input = el("input", { type: "checkbox", className: "row-check" });
+          input.checked = isSelected;
+          input.addEventListener("change", () => {
+            toggleProductSelection(product.id, input.checked);
+            render();
+          });
+          return input;
+        })(),
+      ]);
+
+      return el("tr", { className: `${done ? "is-done-row" : ""}${isSelected ? " is-selected" : ""}`.trim() }, [
+        selectCell,
         el("td", {}, [
           product.coverImage
             ? el("img", { className: "thumb", src: product.coverImage, alt: "" })
@@ -1759,16 +1911,29 @@
       pageItems.length === 0
         ? el("tbody", {}, [
             el("tr", {}, [
-              el("td", { colSpan: "5" }, [el("div", { className: "empty", text: "—" })]),
+              el("td", { colSpan: "6" }, [el("div", { className: "empty", text: "—" })]),
             ]),
           ])
         : el("tbody", {}, rows);
+
+    const selectAll = el("input", {
+      type: "checkbox",
+      className: "row-check",
+      disabled: pageItems.length === 0,
+    });
+    selectAll.checked = allPageSelected;
+    selectAll.indeterminate = somePageSelected;
+    selectAll.addEventListener("change", () => {
+      setPageProductSelection(pageItems, selectAll.checked);
+      render();
+    });
 
     const tableCard = el("div", { className: "table-card" }, [
       el("div", { className: "table-wrap" }, [
         el("table", { className: "table" }, [
           el("thead", {}, [
             el("tr", {}, [
+              el("th", { className: "table__select" }, [selectAll]),
               el("th", { text: "Thumbnail" }),
               el("th", { text: "名稱" }),
               el("th", { text: "狀態" }),
@@ -1781,6 +1946,87 @@
       ]),
       total > 0 ? renderPagination(total) : null,
     ]);
+
+    const bulkBar =
+      selectedCount > 0
+        ? el("div", { className: "bulk-bar" }, [
+            el("div", { className: "bulk-bar__count", text: String(selectedCount) }),
+            el("div", { className: "bulk-bar__actions" }, [
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "btn btn--secondary",
+                  disabled: !canBulkPublish,
+                  onClick: () => runBulkProductAction("publish"),
+                },
+                [icon("publish"), "上架"]
+              ),
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "btn btn--secondary",
+                  disabled: !canBulkUnpublish,
+                  onClick: () => runBulkProductAction("unpublish"),
+                },
+                [icon("unpublish"), "下架"]
+              ),
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "btn btn--secondary",
+                  onClick: () => runBulkProductAction("duplicate"),
+                },
+                [icon("copy"), "複製"]
+              ),
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "btn btn--secondary",
+                  disabled: !canBulkArchive,
+                  onClick: () => runBulkProductAction("archive"),
+                },
+                [icon("archive"), "封存"]
+              ),
+              canBulkUnarchive
+                ? el(
+                    "button",
+                    {
+                      type: "button",
+                      className: "btn btn--secondary",
+                      onClick: () => runBulkProductAction("unarchive"),
+                    },
+                    "取消封存"
+                  )
+                : null,
+              el(
+                "button",
+                {
+                  type: "button",
+                  className: "btn btn--danger",
+                  disabled: !canBulkDelete,
+                  onClick: () => runBulkProductAction("delete"),
+                },
+                [icon("trash"), "刪除"]
+              ),
+            ]),
+            el(
+              "button",
+              {
+                type: "button",
+                className: "btn btn--ghost bulk-bar__clear",
+                onClick: () => {
+                  clearProductSelection();
+                  render();
+                },
+              },
+              icon("close")
+            ),
+          ])
+        : null;
 
     app.replaceChildren(
       el("div", { className: "app-shell" }, [
@@ -1798,6 +2044,7 @@
                     newProductDraft();
                     state.view = "edit";
                     state.error = "";
+                    clearProductSelection();
                     render();
                   },
                 },
@@ -1805,6 +2052,7 @@
               ),
             ]),
             state.error ? el("div", { className: "error", text: state.error }) : null,
+            bulkBar,
             tableCard,
           ]),
         ]),
@@ -2114,7 +2362,10 @@
         ),
       ]),
       el("div", { className: "editor-toolbar__right" }, [
-        product.id && (product.status === "draft" || product.status === "unpublished")
+        product.id &&
+        (product.status === "draft" ||
+          product.status === "unpublished" ||
+          product.status === "archived")
           ? el(
               "button",
               {
@@ -2145,6 +2396,32 @@
                 },
               },
               "上架"
+            )
+          : null,
+        product.id && product.status === "archived"
+          ? el(
+              "button",
+              {
+                type: "button",
+                className: "btn btn--secondary",
+                onClick: async () => {
+                  const ok = await confirmAction({
+                    target: product.name || product.id,
+                    action: "取消封存",
+                  });
+                  if (!ok) return;
+                  try {
+                    await api(`/products/${product.id}/unarchive`, { method: "POST" });
+                    await loadProduct(product.id);
+                    showNotice("已取消封存");
+                    render();
+                  } catch (err) {
+                    state.error = err.message;
+                    render();
+                  }
+                },
+              },
+              "取消封存"
             )
           : null,
         product.id && product.status === "published"

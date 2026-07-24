@@ -40,6 +40,25 @@
       });
 
       mapView.mount();
+
+      (function mountPriceCalc() {
+        const root = document.getElementById("priceCalc");
+        const codeEl = document.getElementById("priceCalcCode");
+        const amountEl = document.getElementById("priceCalcAmount");
+        if (!root || !window.PriceCalc) return;
+
+        function render(session) {
+          const active = Boolean(session && session.active);
+          root.hidden = !active;
+          if (!active) return;
+          if (codeEl) codeEl.textContent = session.code;
+          if (amountEl) amountEl.textContent = PriceCalc.formatAmount(session.total);
+        }
+
+        render(PriceCalc.get());
+        PriceCalc.subscribe(render);
+      })();
+
       window.Dottery = { product, mapView, boardInfo };
     })
     .catch(() => {

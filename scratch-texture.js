@@ -199,11 +199,13 @@
     canvas.style.transform = `scale(${localSize / visual})`;
     canvas.style.display = "block";
     canvas.style.borderRadius = "50%";
-    const ctx = canvas.getContext("2d", { willReadFrequently: true });
+    const ctx = canvas.getContext("2d", { alpha: true });
     const opts = resolveOptions(options);
     canvas.dataset.foilPreset = opts.preset;
     canvas.dataset.foilImage = opts.imageUrl || "";
     canvas.dataset.localSize = String(localSize);
+    canvas.dataset.visual = String(visual);
+    canvas.dataset.px = String(px);
 
     if (opts.imageUrl) {
       paintSync(ctx, px, px, opts);
@@ -221,6 +223,14 @@
       visualCssSize;
     const visual = Math.max(localSize, visualCssSize);
     const px = getPreviewPixelSize(visual);
+    if (
+      Number(canvas.dataset.px) === px &&
+      Number(canvas.dataset.visual) === visual
+    ) {
+      return;
+    }
+    canvas.dataset.visual = String(visual);
+    canvas.dataset.px = String(px);
     canvas.style.width = `${visual}px`;
     canvas.style.height = `${visual}px`;
     canvas.style.transformOrigin = "0 0";
@@ -232,11 +242,12 @@
       preset: canvas.dataset.foilPreset || "silver",
       imageUrl: canvas.dataset.foilImage || "",
     };
+    const ctx = canvas.getContext("2d", { alpha: true });
     if (opts.imageUrl) {
-      paintSync(canvas.getContext("2d"), px, px, opts);
-      paint(canvas.getContext("2d"), px, px, opts);
+      paintSync(ctx, px, px, opts);
+      paint(ctx, px, px, opts);
     } else {
-      paintSync(canvas.getContext("2d"), px, px, opts);
+      paintSync(ctx, px, px, opts);
     }
   }
 
@@ -245,6 +256,7 @@
     paintSync,
     createPreviewCanvas,
     resizePreviewCanvas,
+    getPreviewPixelSize,
     loadImage,
     PRESETS,
   };

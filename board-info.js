@@ -159,6 +159,8 @@
           img.src = row.image;
           img.alt = "";
           img.draggable = false;
+          img.decoding = "async";
+          img.loading = "lazy";
           media.appendChild(img);
         } else {
           const empty = document.createElement("div");

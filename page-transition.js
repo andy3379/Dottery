@@ -145,19 +145,39 @@
     window.dispatchEvent(new CustomEvent("dottery:before-page-leave"));
   }
 
+  function isFullscreenActive() {
+    return Boolean(document.fullscreenElement || document.webkitFullscreenElement);
+  }
+
+  function wantsFullscreenPersist() {
+    try {
+      return sessionStorage.getItem("dottery-fs") === "1";
+    } catch (_e) {
+      return false;
+    }
+  }
+
+  function shouldKeepFullscreen() {
+    return isFullscreenActive() || wantsFullscreenPersist();
+  }
+
   async function navigate(url, direction) {
     if (!url || navigating || isNavigationBlocked()) return;
+
+    navigating = true;
+    if (direction) sessionStorage.setItem(STORAGE_KEY, direction);
+    dispatchBeforeLeave();
+
     if (!canAnimate()) {
       window.location.assign(url);
       return;
     }
 
-    navigating = true;
-    sessionStorage.setItem(STORAGE_KEY, direction);
-    dispatchBeforeLeave();
-
-    await Promise.race([prefetchRoute(url), delay(PREFETCH_MAX_WAIT_MS)]);
-    await nextFrames(1);
+    const keepFs = shouldKeepFullscreen();
+    if (!keepFs) {
+      await Promise.race([prefetchRoute(url), delay(PREFETCH_MAX_WAIT_MS)]);
+      await nextFrames(1);
+    }
     window.location.assign(url);
   }
 
@@ -189,7 +209,7 @@
     prefetchRoute(href);
   }
 
-  function onDocumentClick(event) {
+  function beginLinkNavigation(event, link) {
     if (
       navigating ||
       isNavigationBlocked() ||
@@ -197,26 +217,39 @@
       event.metaKey ||
       event.ctrlKey ||
       event.shiftKey ||
-      event.altKey ||
-      event.button !== 0
+      event.altKey
     ) {
-      return;
+      return false;
     }
-
-    const link = getTransitionLink(event.target);
-    if (!link || link.target === "_blank") return;
 
     const href = link.getAttribute("href");
     const direction = getDirection(href);
-    if (!direction) return;
+    if (!direction) return false;
 
     event.preventDefault();
     event.stopPropagation();
     void navigate(href, direction);
+    return true;
+  }
+
+  function onPointerDownNavigate(event) {
+    if (event.pointerType === "mouse" && event.button !== 0) return;
+    if (!shouldKeepFullscreen()) return;
+    const link = getTransitionLink(event.target);
+    if (!link || link.target === "_blank") return;
+    beginLinkNavigation(event, link);
+  }
+
+  function onDocumentClick(event) {
+    if (event.button !== 0) return;
+    const link = getTransitionLink(event.target);
+    if (!link || link.target === "_blank") return;
+    beginLinkNavigation(event, link);
   }
 
   function boot() {
     document.addEventListener("pointerdown", onPointerIntent, true);
+    document.addEventListener("pointerdown", onPointerDownNavigate, true);
     document.addEventListener("mouseover", onPointerIntent, true);
     document.addEventListener("click", onDocumentClick, true);
     prefetchVisibleLinks();

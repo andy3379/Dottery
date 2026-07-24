@@ -9,6 +9,9 @@
   const SCRATCH_ENTRY_SCALE_RATIO = 0.39;
   const ZOOM_ASSIST_FACTOR = 3;
   const MIN_SLOT_HIT_SCREEN_PX = 16;
+  const MAX_FULL_BOARD_DPR = 2;
+  const MAX_FULL_BOARD_EDGE = 4096;
+  const MAX_FULL_BOARD_AREA = 16 * 1024 * 1024;
 
   const FOIL_FILL = {
     silver: "#a3a3a3",
@@ -45,6 +48,9 @@
       panStart: null,
       pinchStart: null,
       tapCandidate: null,
+      gesturing: false,
+      lastPreviewBucket: -1,
+      wheelIdleTimer: 0,
       viewportRect: null,
       getFoilOptions: options.getFoilOptions || (() => ({ preset: "silver", imageUrl: "" })),
       getSlotData: options.getSlotData || (() => null),
@@ -186,9 +192,32 @@
       );
     }
 
+    function getFullBoardPixelSize() {
+      const dpr = Math.min(window.devicePixelRatio || 1, MAX_FULL_BOARD_DPR);
+      const { width, height } = getBoardSize();
+      return {
+        dpr,
+        width,
+        height,
+        pxW: Math.max(1, Math.floor(width * dpr)),
+        pxH: Math.max(1, Math.floor(height * dpr)),
+      };
+    }
+
+    function isFullBoardCanvasSafe() {
+      const { pxW, pxH } = getFullBoardPixelSize();
+      return (
+        pxW <= MAX_FULL_BOARD_EDGE &&
+        pxH <= MAX_FULL_BOARD_EDGE &&
+        pxW * pxH <= MAX_FULL_BOARD_AREA
+      );
+    }
+
     function getLodLevel(visualSize) {
       if (state.mode === "scratch") return 3;
-      if (visualSize < LOD_0_MAX) return 0;
+      if (visualSize < LOD_0_MAX) {
+        return isFullBoardCanvasSafe() ? 0 : 1;
+      }
       if (visualSize < LOD_1_MAX) return 1;
       return 2;
     }
@@ -347,8 +376,19 @@
     function applyCameraTransform(camera, animate) {
       state.camera = clampCamera(camera);
       world.classList.toggle("is-animating", Boolean(animate));
-      world.style.transform = `translate(${state.camera.tx}px, ${state.camera.ty}px) scale(${state.camera.scale})`;
+      world.style.transform = `translate3d(${state.camera.tx}px, ${state.camera.ty}px, 0) scale(${state.camera.scale})`;
+      if (state.gesturing && !animate) return;
       scheduleRender();
+    }
+
+    function setGesturing(active) {
+      if (state.gesturing === active) return;
+      state.gesturing = active;
+      viewport.classList.toggle("is-gesturing", active);
+      if (!active) {
+        state.lastPreviewBucket = -1;
+        scheduleRender();
+      }
     }
 
     function waitForTransition() {
@@ -457,17 +497,28 @@
 
     function drawFullBoard() {
       const ctx = boardCanvas.getContext("2d");
-      const dpr = window.devicePixelRatio || 1;
-      const { width, height } = getBoardSize();
-      const pxW = Math.max(1, Math.floor(width * dpr));
-      const pxH = Math.max(1, Math.floor(height * dpr));
+      const { dpr, width, height } = getFullBoardPixelSize();
+      let pxW = Math.max(1, Math.floor(width * dpr));
+      let pxH = Math.max(1, Math.floor(height * dpr));
+      let scale = dpr;
+      const edgeScale = Math.min(1, MAX_FULL_BOARD_EDGE / pxW, MAX_FULL_BOARD_EDGE / pxH);
+      const areaScale =
+        pxW * pxH > MAX_FULL_BOARD_AREA
+          ? Math.sqrt(MAX_FULL_BOARD_AREA / (pxW * pxH))
+          : 1;
+      const budgetScale = Math.min(edgeScale, areaScale);
+      if (budgetScale < 1) {
+        pxW = Math.max(1, Math.floor(pxW * budgetScale));
+        pxH = Math.max(1, Math.floor(pxH * budgetScale));
+        scale = dpr * budgetScale;
+      }
       if (boardCanvas.width !== pxW || boardCanvas.height !== pxH) {
         boardCanvas.width = pxW;
         boardCanvas.height = pxH;
         boardCanvas.style.width = `${width}px`;
         boardCanvas.style.height = `${height}px`;
       }
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.setTransform(scale, 0, 0, scale, 0, 0);
       ctx.clearRect(0, 0, width, height);
       const { slotSize } = getLayout();
       const radius = slotSize / 2;
@@ -697,6 +748,9 @@
     function syncSlotPreviewSizes() {
       const visualSize = getVisualSlotSize();
       const localSize = getLayout().slotSize;
+      const bucket = ScratchTexture.getPreviewPixelSize(visualSize);
+      if (bucket === state.lastPreviewBucket) return;
+      state.lastPreviewBucket = bucket;
       state.slotPool.forEach((handle) => {
         if (handle.slot.classList.contains("is-visited")) return;
         const previewCanvas = handle.preview.querySelector(".slot__preview-canvas");
@@ -733,7 +787,7 @@
 
     function render() {
       state.rafId = 0;
-      if (!state.product) return;
+      if (!state.product || state.gesturing) return;
 
       const visualSize = getVisualSlotSize();
       const lod = getLodLevel(visualSize);
@@ -752,9 +806,7 @@
         syncTileLayer();
       } else {
         syncSlotLayer();
-        if (state.pointers.size === 0) {
-          syncSlotPreviewSizes();
-        }
+        syncSlotPreviewSizes();
       }
     }
 
@@ -771,11 +823,6 @@
       const tileCol = Math.floor(col / TILE_SLOT_COLS);
       const tileRow = Math.floor(row / TILE_SLOT_ROWS);
       state.dirtyTiles.add(getTileKey(tileCol, tileRow));
-      const handle = state.slotPool.get(index);
-      if (handle) {
-        handle.slot.classList.add("is-opened", "is-visited");
-        handle.preview.hidden = true;
-      }
       scheduleRender();
     }
 
@@ -848,14 +895,21 @@
       if (state.mode === "scratch" || state.isAnimating) return;
       event.preventDefault();
       const factor = event.deltaY < 0 ? 1.12 : 1 / 1.12;
+      setGesturing(true);
       zoomAt(event.clientX, event.clientY, factor);
+      window.clearTimeout(state.wheelIdleTimer);
+      state.wheelIdleTimer = window.setTimeout(() => {
+        if (state.pointers.size === 0) setGesturing(false);
+      }, 140);
     }
 
     function onPointerDown(event) {
       if (state.mode === "scratch" || state.isAnimating) return;
       if (event.pointerType === "mouse" && event.button !== 0) return;
+      window.clearTimeout(state.wheelIdleTimer);
       viewport.setPointerCapture(event.pointerId);
       state.pointers.set(event.pointerId, { x: event.clientX, y: event.clientY });
+      setGesturing(true);
 
       if (state.pointers.size === 1) {
         state.panStart = {
@@ -944,8 +998,8 @@
       if (state.pointers.size === 0) {
         state.panStart = null;
         state.tapCandidate = null;
+        setGesturing(false);
       }
-      scheduleRender();
       try {
         viewport.releasePointerCapture(event.pointerId);
       } catch (_error) {}
