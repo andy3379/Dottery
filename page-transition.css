@@ -30,6 +30,16 @@ html.page-x-prep--to-shop {
   backface-visibility: hidden;
 }
 
+.shop-admin {
+  color: rgba(21, 21, 26, 0.38);
+}
+
+.shop-admin svg {
+  width: 1rem;
+  height: 1rem;
+  display: block;
+}
+
 .page-sheet {
   display: none;
 }

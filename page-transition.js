@@ -203,21 +203,32 @@
     document.documentElement.classList.remove("is-preview");
   }
 
-  function syncStylesheets(doc) {
+  function waitStylesheet(link) {
+    return new Promise((resolve) => {
+      if (link.sheet) {
+        resolve();
+        return;
+      }
+      let done = false;
+      const finish = () => {
+        if (done) return;
+        done = true;
+        resolve();
+      };
+      link.addEventListener("load", finish, { once: true });
+      link.addEventListener("error", finish, { once: true });
+      window.setTimeout(finish, 250);
+    });
+  }
+
+  async function syncStylesheets(doc) {
     const keepNames = new Set(["page-transition.css"]);
     const wanted = [...doc.querySelectorAll('link[rel="stylesheet"]')].map((link) => ({
       href: link.getAttribute("href"),
       name: scriptName(link.getAttribute("href")),
     }));
 
-    document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
-      const name = scriptName(link.getAttribute("href"));
-      if (keepNames.has(name)) return;
-      if (name.includes("fonts.googleapis") || link.href.includes("fonts.googleapis")) return;
-      if (wanted.some((item) => item.name === name)) return;
-      link.remove();
-    });
-
+    const pending = [];
     wanted.forEach((item) => {
       if (!item.href) return;
       if (keepNames.has(item.name)) return;
@@ -229,6 +240,19 @@
       link.rel = "stylesheet";
       link.href = item.href;
       document.head.appendChild(link);
+      pending.push(waitStylesheet(link));
+    });
+
+    if (pending.length) {
+      await Promise.all(pending);
+    }
+
+    document.querySelectorAll('link[rel="stylesheet"]').forEach((link) => {
+      const name = scriptName(link.getAttribute("href"));
+      if (keepNames.has(name)) return;
+      if (name.includes("fonts.googleapis") || link.href.includes("fonts.googleapis")) return;
+      if (wanted.some((item) => item.name === name)) return;
+      link.remove();
     });
   }
 
@@ -348,7 +372,7 @@
 
   async function applyDocument(doc, direction) {
     clearPageChrome();
-    syncStylesheets(doc);
+    await syncStylesheets(doc);
     replaceStage(doc);
     replacePageExtras(doc);
     await runPageScripts(doc);
