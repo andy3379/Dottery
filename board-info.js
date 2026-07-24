@@ -182,8 +182,13 @@
         top.appendChild(name);
 
         const prob = document.createElement("span");
-        prob.className = "board-prize__prob";
-        prob.textContent = row.pctLabel;
+        if (row.isLastOne) {
+          prob.className = "board-prize__prob board-prize__prob--last";
+          prob.textContent = "最後賞";
+        } else {
+          prob.className = "board-prize__prob";
+          prob.textContent = row.pctLabel;
+        }
         top.appendChild(prob);
 
         body.appendChild(top);

@@ -425,6 +425,10 @@ body.has-board-prize .viewport {
   font-variant-numeric: tabular-nums;
 }
 
+.board-prize__prob--last {
+  color: #c4921a;
+}
+
 .board-prize__numbers {
   display: flex;
   flex-wrap: wrap;

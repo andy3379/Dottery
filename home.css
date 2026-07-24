@@ -1140,75 +1140,6 @@ a {
   right: 0.25rem;
 }
 
-.hero-edge__arrow {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  width: min(3rem, 54%);
-  height: min(82vh, 760px);
-  transform: translate(-50%, -50%);
-  pointer-events: none;
-  overflow: visible;
-}
-
-.hero-edge__arrow::before,
-.hero-edge__arrow::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  width: 0.42rem;
-  height: 44%;
-  margin-left: -0.21rem;
-  border-radius: 999px;
-  background: rgba(21, 21, 26, 0.22);
-  transition: background 0.25s ease, transform 0.25s ease, opacity 0.25s ease;
-}
-
-.hero-edge--prev .hero-edge__arrow {
-  left: 62%;
-}
-
-.hero-edge--prev .hero-edge__arrow::before {
-  top: 3%;
-  transform: translateX(-0.35rem) rotate(26deg);
-  transform-origin: bottom center;
-}
-
-.hero-edge--prev .hero-edge__arrow::after {
-  bottom: 3%;
-  transform: translateX(-0.35rem) rotate(-26deg);
-  transform-origin: top center;
-}
-
-.hero-edge--next .hero-edge__arrow {
-  left: 38%;
-}
-
-.hero-edge--next .hero-edge__arrow::before {
-  top: 3%;
-  transform: translateX(0.35rem) rotate(-26deg);
-  transform-origin: bottom center;
-}
-
-.hero-edge--next .hero-edge__arrow::after {
-  bottom: 3%;
-  transform: translateX(0.35rem) rotate(26deg);
-  transform-origin: top center;
-}
-
-.hero-edge:hover .hero-edge__arrow::before,
-.hero-edge:hover .hero-edge__arrow::after,
-.hero-edge:focus-visible .hero-edge__arrow::before,
-.hero-edge:focus-visible .hero-edge__arrow::after {
-  background: rgba(21, 21, 26, 0.38);
-}
-
-.hero-edge:active .hero-edge__arrow::before,
-.hero-edge:active .hero-edge__arrow::after {
-  background: rgba(21, 21, 26, 0.45);
-  opacity: 0.92;
-}
-
 .hero__dot {
   width: 0.4rem;
   height: 0.4rem;
@@ -1292,14 +1223,6 @@ a {
 
   .hero-edge--next {
     right: 0;
-  }
-
-  .hero-edge--prev .hero-edge__arrow {
-    left: 55%;
-  }
-
-  .hero-edge__arrow {
-    height: min(76vh, 620px);
   }
 
   .shop__main {

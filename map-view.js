@@ -793,6 +793,7 @@
     function syncFullscreenButton() {
       if (!fullscreenBtn) return;
       const active = isFullscreen();
+      fullscreenBtn.hidden = active;
       fullscreenBtn.classList.toggle("is-active", active);
       fullscreenBtn.setAttribute("aria-label", active ? "exit" : "fullscreen");
     }
