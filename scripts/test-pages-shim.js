@@ -108,10 +108,10 @@ async function main() {
   r = await api("/api/admin/dashboard");
   assert.strictEqual(r.status, 401);
 
-  r = await api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: "wrong" }) });
+  r = await api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: "9999" }) });
   assert.strictEqual(r.status, 401);
 
-  r = await api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: "dottery" }) });
+  r = await api("/api/admin/login", { method: "POST", body: JSON.stringify({ password: "0000" }) });
   assert.strictEqual(r.status, 200);
 
   r = await api("/api/admin/me");

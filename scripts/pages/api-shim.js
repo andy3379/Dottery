@@ -3,7 +3,7 @@
 
   var DB_KEY = "dottery-pages-db";
   var AUTH_KEY = "dottery-pages-admin";
-  var ADMIN_PASSWORD = "0000";
+  var DEFAULT_ADMIN_PIN = "0000";
   var THEMES = ["light", "warm", "cool", "dark", "rose"];
   var FOIL_PRESETS = ["silver", "gold", "color"];
   var LAYOUT = { slotSize: 88, gap: 24, zoomTargetSize: 300, zoomPadding: 0.88 };
@@ -585,6 +585,11 @@
     };
   }
 
+  function getAdminPin(db) {
+    var pin = String(db.adminPin || "");
+    return /^\d{4}$/.test(pin) ? pin : DEFAULT_ADMIN_PIN;
+  }
+
   function saveSettings(db, input) {
     var current = db.settings || defaultSettings();
     db.settings = {
@@ -989,7 +994,8 @@
 
     if (method === "POST" && route === "login") {
       var body = parseBody(init);
-      if (String(body.password || "") !== ADMIN_PASSWORD) {
+      var pin = String(body.password || "");
+      if (!/^\d{4}$/.test(pin) || pin !== getAdminPin(db)) {
         return json({ error: "密碼錯誤" }, 401);
       }
       setAuthed(true);
@@ -1023,7 +1029,15 @@
     }
 
     if (method === "PUT" && route === "settings") {
-      return json(saveSettings(db, parseBody(init)));
+      var settingsBody = parseBody(init);
+      var pinInput = settingsBody.adminPin != null ? String(settingsBody.adminPin).trim() : "";
+      if (pinInput && !/^\d{4}$/.test(pinInput)) {
+        return json({ error: "密碼須為4位數字" }, 400);
+      }
+      if (pinInput) {
+        db.adminPin = pinInput;
+      }
+      return json(saveSettings(db, settingsBody));
     }
 
     if (method === "POST" && route === "upload") {

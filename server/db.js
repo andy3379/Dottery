@@ -5,8 +5,12 @@ const path = require("path");
 const { DatabaseSync } = require("node:sqlite");
 
 const ROOT = path.join(__dirname, "..");
-const DATA_DIR = path.join(ROOT, "data");
-const UPLOADS_DIR = path.join(ROOT, "uploads");
+const DATA_DIR = process.env.DOTTERY_DATA_DIR
+  ? path.resolve(process.env.DOTTERY_DATA_DIR)
+  : path.join(ROOT, "data");
+const UPLOADS_DIR = process.env.DOTTERY_UPLOADS_DIR
+  ? path.resolve(process.env.DOTTERY_UPLOADS_DIR)
+  : path.join(ROOT, "uploads");
 const DB_PATH = path.join(DATA_DIR, "dottery.db");
 
 function ensureDirs() {

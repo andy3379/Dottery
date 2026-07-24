@@ -10,10 +10,19 @@ const { createAdminRouter } = require("./routes/admin");
 const { createPublicRouter } = require("./routes/public");
 
 const PORT = Number(process.env.PORT) || 3000;
+const IS_PROD =
+  process.env.NODE_ENV === "production" || Boolean(process.env.RAILWAY_ENVIRONMENT);
 
 const db = createDb();
 const app = express();
 const sessions = new Map();
+
+function sessionCookie(sid, maxAge) {
+  let value = `dottery_sid=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax`;
+  if (IS_PROD) value += "; Secure";
+  if (maxAge != null) value += `; Max-Age=${maxAge}`;
+  return value;
+}
 
 const PUBLIC_FILES = [
   "home.html",
@@ -55,20 +64,14 @@ function sessionMiddleware(req, res, next) {
   if (!sid || !sessions.has(sid)) {
     sid = nanoid(24);
     sessions.set(sid, {});
-    res.setHeader(
-      "Set-Cookie",
-      `dottery_sid=${encodeURIComponent(sid)}; Path=/; HttpOnly; SameSite=Lax`
-    );
+    res.setHeader("Set-Cookie", sessionCookie(sid));
   }
   req.session = sessions.get(sid);
   const originalJson = res.json.bind(res);
   res.json = (body) => {
     if (req.session === null) {
       sessions.delete(sid);
-      res.setHeader(
-        "Set-Cookie",
-        "dottery_sid=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0"
-      );
+      res.setHeader("Set-Cookie", sessionCookie("", 0));
     } else {
       sessions.set(sid, req.session);
     }
@@ -108,7 +111,7 @@ PUBLIC_FILES.forEach((file) => {
   });
 });
 
-app.listen(PORT, () => {
+app.listen(PORT, "0.0.0.0", () => {
   process.stdout.write(`Dottery http://localhost:${PORT}\n`);
   process.stdout.write(`Admin  http://localhost:${PORT}/admin  pin=${getAdminPin(db)}\n`);
 });
